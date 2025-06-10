@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Render.py  –  complete file, no wildcard imports
+# RotatingCube.py  –  complete file, no wildcard imports
 import math
 import time
 import sys
@@ -70,9 +70,18 @@ def main() -> None:
     handle = renderer.add_object(mesh, shader)
 
     start = time.time()
+    last_time = start
+    
     while not renderer.should_close():
-        renderer.update_model(handle, rotation_y(time.time() - start))
-        renderer.render_frame()
+        current_time = time.time()
+        delta_time = current_time - last_time
+        last_time = current_time
+        
+        # Update model rotation
+        renderer.update_model(handle, rotation_y(current_time - start))
+        
+        # Render frame with delta time for input processing
+        renderer.render_frame(delta_time)
 
 
 if __name__ == "__main__":
