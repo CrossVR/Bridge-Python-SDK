@@ -69,7 +69,7 @@ def rotation_y(t: float) -> np.ndarray:
                      [ 0,0, 0,1]], dtype=np.float32)
 
 def main() -> None:
-    renderer = Render()
+    renderer = Render(debug=True)
     mesh = Mesh(cube_vertices, attribs)
     shader = Shader(vertex_shader_src, fragment_shader_src)
     handle = renderer.add_object(mesh, shader)

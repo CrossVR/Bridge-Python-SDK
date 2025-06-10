@@ -168,7 +168,7 @@ class Render:
 
     # ------------ focus / offset ------------
     def update_focus(self, focus: float) -> None:
-        self.focus = max(0.0, min(100.0, focus))
+        self.focus = max(-10.0, min(10.0, focus))
         print(f"Focus: {self.focus:.2f}", file=sys.stderr)
 
     def update_offset(self, offset: float) -> None:
