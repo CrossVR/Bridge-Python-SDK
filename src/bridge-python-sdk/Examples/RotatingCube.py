@@ -16,8 +16,6 @@ from Rendering.Mesh import Mesh
 from Rendering.Render import Render
 
 # ------------------------------------------------------------ cube geometry
-
-# Fixed cube vertices - only position data (3 floats per vertex)
 cube_vertices = np.array([
     # Front face
     -0.5,-0.5, 0.5,  0.5,-0.5, 0.5,  0.5, 0.5, 0.5,
@@ -39,21 +37,29 @@ cube_vertices = np.array([
      0.5,-0.5, 0.5,  0.5,-0.5,-0.5, -0.5,-0.5,-0.5
 ], dtype=np.float32)
 
-# Attribute layout: only position (3 floats)
-stride = 3 * 4  # 3 floats * 4 bytes per float
+stride = 3 * 4  # position only
 attribs = [(0, 3, GL.GL_FLOAT, False, stride, 0)]
 
 vertex_shader_src = """
 #version 330 core
 layout(location = 0) in vec3 aPos;
 uniform mat4 u_mvp;
-void main(){ gl_Position = u_mvp * vec4(aPos,1.0); }"""
+out vec2 vUV;
+void main(){
+    gl_Position = u_mvp * vec4(aPos,1.0);
+    vUV = aPos.xz * 0.5 + 0.5;   // simple planar UV from XZ
+}
+"""
 
 fragment_shader_src = """
 #version 330 core
+in vec2 vUV;
 out vec4 FragColor;
-void main(){ FragColor = vec4(0.3,0.6,1.0,1.0); }"""
-
+void main(){
+    vec3 col = vec3(vUV, 1.0 - vUV.x);
+    FragColor = vec4(col,1.0);
+}
+"""
 
 def rotation_y(t: float) -> np.ndarray:
     c, s = math.cos(t), math.sin(t)
@@ -62,27 +68,20 @@ def rotation_y(t: float) -> np.ndarray:
                      [-s,0, c,0],
                      [ 0,0, 0,1]], dtype=np.float32)
 
-
 def main() -> None:
-    renderer = Render(debug=True)
+    renderer = Render()
     mesh = Mesh(cube_vertices, attribs)
     shader = Shader(vertex_shader_src, fragment_shader_src)
     handle = renderer.add_object(mesh, shader)
 
     start = time.time()
     last_time = start
-    
     while not renderer.should_close():
-        current_time = time.time()
-        delta_time = current_time - last_time
-        last_time = current_time
-        
-        # Update model rotation
-        renderer.update_model(handle, rotation_y(current_time - start))
-        
-        # Render frame with delta time for input processing
-        renderer.render_frame(delta_time)
-
+        now = time.time()
+        delta = now - last_time
+        last_time = now
+        renderer.update_model(handle, rotation_y(now - start))
+        renderer.render_frame(delta)
 
 if __name__ == "__main__":
     main()

@@ -60,3 +60,25 @@ class Shader:
     def set_vec4(self, name: str, x: float, y: float, z: float, w: float):
         loc = glGetUniformLocation(self.id, name)
         glUniform4f(loc, x, y, z, w)
+
+    def set_uniform(self, name: str, value):
+        """Dispatch to the correct glUniform* call based on Python value type/length."""
+        loc = glGetUniformLocation(self.id, name)
+        if loc == -1:
+            raise ValueError(f"Uniform '{name}' not found in program")
+        if isinstance(value, (int, np.integer)):
+            glUniform1i(loc, int(value))
+        elif isinstance(value, (float, np.floating)):
+            glUniform1f(loc, float(value))
+        elif isinstance(value, (tuple, list, np.ndarray)):
+            length = len(value)
+            if length == 2:
+                glUniform2f(loc, *value)
+            elif length == 3:
+                glUniform3f(loc, *value)
+            elif length == 4:
+                glUniform4f(loc, *value)
+            else:
+                raise ValueError(f"Unsupported uniform vector length {length}")
+        else:
+            raise TypeError(f"Unsupported uniform type {type(value).__name__}")
