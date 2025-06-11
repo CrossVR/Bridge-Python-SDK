@@ -18,6 +18,13 @@ NOTE: This is an alpha release for testing.
 pip install "bridge-python-sdk @ git+https://github.com/Looking-Glass/bridge-python-sdk"
 ```
 
+For a quick burn in test, run one of the examples:
+
+```bash
+python -m bridge_python_sdk.Examples.SolarSystem
+python -m bridge_python_sdk.Examples.RotatingCube
+```
+
 On Linux you must run under **X11**; Wayland is not yet supported.
 
 ## Quick Start

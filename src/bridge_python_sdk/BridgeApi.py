@@ -12,10 +12,8 @@ from ctypes import (
 )
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import importlib.resources as ir
 
-# -----------------------------------------------------------------
-#  Bridge-level data-types you already have elsewhere
-# -----------------------------------------------------------------
 from BridgeDataTypes import Window, PixelFormats, LKGCalibration, DefaultQuiltSettings
 
 _MIN_BRIDGE_VERSION = "2.6.0"
@@ -74,20 +72,42 @@ class BridgeAPI:
 
         if library_path is None:
             install_dir = _bridge_install_location(requested_version)
-            if install_dir is None:
-                raise FileNotFoundError("Looking-Glass Bridge runtime not found")
-            if sys.platform.startswith("win"):
-                ctypes.windll.kernel32.SetDllDirectoryW(str(install_dir))
-                library_path = str(install_dir / "bridge_inproc.dll")
-            elif sys.platform == "darwin":
-                library_path = str(install_dir / "libbridge_inproc.dylib")
-            else:
-                library_path = str(install_dir / "libbridge_inproc.so")
 
+            # ---------- fallback to packaged binaries ----------
+            if install_dir is None:
+                pkg_root = ir.files("bridge_python_sdk") / "bin"
+                if sys.platform.startswith("win"):
+                    subdir = "win"
+                    lib_name = "bridge_inproc.dll"
+                elif sys.platform == "darwin":
+                    subdir = "mac-m1" if platform.machine().lower() in ("arm64", "aarch64") else "mac-x64"
+                    lib_name = "libbridge_inproc.dylib"
+                else:
+                    subdir = "ubuntu"
+                    lib_name = "libbridge_inproc.so"
+                install_dir = pkg_root / subdir
+                library_path = str(install_dir / lib_name)
+                # ensure dependent DLLs are found on Windows
+                if sys.platform.startswith("win"):
+                    ctypes.windll.kernel32.SetDllDirectoryW(str(install_dir))
+
+            # ---------- use system install ----------
+            else:
+                if sys.platform.startswith("win"):
+                    ctypes.windll.kernel32.SetDllDirectoryW(str(install_dir))
+                    library_path = str(install_dir / "bridge_inproc.dll")
+                elif sys.platform == "darwin":
+                    library_path = str(install_dir / "libbridge_inproc.dylib")
+                else:
+                    library_path = str(install_dir / "libbridge_inproc.so")
+
+        # -------- load the shared library ----------
         self.lib = (ctypes.WinDLL(library_path, use_last_error=True)
                     if sys.platform.startswith("win")
                     else ctypes.CDLL(library_path))
+
         self._bind_functions()
+
 
     # ------------- bind native exports ---------------------------------
     def _bind_functions(self) -> None:
