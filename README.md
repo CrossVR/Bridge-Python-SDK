@@ -1,4 +1,4 @@
-# Looking Glass Bridge SDK · Python Edition
+# Looking Glass Bridge SDK · Python Edition 
 
 Integrate your existing Python-based 3D workflow with any Looking Glass display and treat the holographic panel as a second, light-field monitor. This package wraps the native Bridge SDK so you can render quilts in OpenGL, hand them off to Bridge, and see them instantly on the device – all without leaving Python.
 
@@ -11,6 +11,8 @@ Integrate your existing Python-based 3D workflow with any Looking Glass display 
 * **Zero-copy texture path** – pass existing OpenGL textures; no CPU read-backs required.  
 
 ## Installation
+
+NOTE: This is an alpha release for testing.
 
 ```bash
 pip install "bridge-python-sdk @ git+https://github.com/Looking-Glass/bridge-python-sdk"
