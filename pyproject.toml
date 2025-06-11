@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bridge-python-sdk"
+version = "1.0.0"
+description = "Bridge Python SDK for Looking Glass Factory"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Alec Zinsli (Looking Glass Factory)", email = "alec.zinsli@lookingglassfactory.com"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux"
+]
+keywords = ["looking-glass", "graphics", "sdk"]
+
+[project.urls]
+Homepage = "https://github.com/your-org/bridge-python-sdk"
+Issues = "https://github.com/your-org/bridge-python-sdk/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+bridge_python_sdk = [
+    "bin/win/*.dll",
+    "bin/mac-m1/*.dylib",
+    "bin/mac-x64/*.dylib",
+    "bin/ubuntu/*.so"
+]
+
+[tool.setuptools.exclude-package-data]
+bridge_python_sdk = ["*.pdb"]
+
+# ---------- optional CI wheel automation ----------
+[tool.cibuildwheel]
+skip = ["pp*", "cp27*", "cp35*"]  # build only CPython ≥3.8
+archs = ["auto"]                  # build one wheel per host arch
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]       # or "universal2"
+repair-wheel-command = "delocate-wheel {wheel} -w {dest_dir}"
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "quay.io/pypa/manylinux2014_x86_64"
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
