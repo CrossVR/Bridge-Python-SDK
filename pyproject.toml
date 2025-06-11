@@ -1,10 +1,11 @@
+# pyproject.toml  — import now works     <== bump version every rebuild
 [build-system]
 requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bridge-python-sdk"
-version = "1.0.0"
+version = "1.0.0"                           # ← increment so pip upgrades
 description = "Bridge Python SDK for Looking Glass Factory"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -20,15 +21,18 @@ classifiers = [
 ]
 keywords = ["looking-glass", "graphics", "sdk"]
 
+dynamic = ["dependencies"]
+
 [project.urls]
 Homepage = "https://github.com/your-org/bridge-python-sdk"
-Issues = "https://github.com/your-org/bridge-python-sdk/issues"
+Issues   = "https://github.com/your-org/bridge-python-sdk/issues"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "src"}                  # src-layout, root is src/
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where   = ["src"]                           # scan src/
+include = ["bridge_python_sdk*"]            # pick up renamed dir + subpkgs
 
 [tool.setuptools.package-data]
 bridge_python_sdk = [
@@ -41,15 +45,18 @@ bridge_python_sdk = [
 [tool.setuptools.exclude-package-data]
 bridge_python_sdk = ["*.pdb"]
 
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
 # ---------- optional CI wheel automation ----------
 [tool.cibuildwheel]
-skip = ["pp*", "cp27*", "cp35*"]  # build only CPython ≥3.8
-archs = ["auto"]                  # build one wheel per host arch
+skip  = ["pp*", "cp27*", "cp35*"]
+archs = ["auto"]
 
 [tool.cibuildwheel.macos]
-archs = ["x86_64", "arm64"]       # or "universal2"
+archs                = ["x86_64", "arm64"]   # or "universal2"
 repair-wheel-command = "delocate-wheel {wheel} -w {dest_dir}"
 
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "quay.io/pypa/manylinux2014_x86_64"
-repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
+repair-wheel-command   = "auditwheel repair -w {dest_dir} {wheel}"

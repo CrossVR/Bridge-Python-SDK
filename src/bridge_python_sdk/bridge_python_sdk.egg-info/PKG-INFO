@@ -14,10 +14,6 @@ Classifier: Operating System :: POSIX :: Linux
 Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: numpy>=1.24
-Requires-Dist: glfw>=2.5.9
-Requires-Dist: PyOpenGL>=3.1.6
-Requires-Dist: Pillow>=10.0.0
 Dynamic: license-file
 
 # Looking Glass Bridge SDK · Python Edition

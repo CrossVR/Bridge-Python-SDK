@@ -1,1 +1,1 @@
-bridge-python-sdk
+bridge_python_sdk

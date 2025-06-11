@@ -13,7 +13,7 @@ Integrate your existing Python-based 3D workflow with any Looking Glass display 
 ## Installation
 
 ```bash
-pip install looking-glass-bridge-sdk
+pip install "bridge-python-sdk @ git+https://github.com/Looking-Glass/bridge-python-sdk"
 ```
 
 On Linux you must run under **X11**; Wayland is not yet supported.
