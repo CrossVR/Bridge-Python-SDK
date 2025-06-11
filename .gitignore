@@ -2,3 +2,5 @@ venv/*
 */__pycache__/*
 src/bridge-python-sdk/Rendering/__pycache__/*
 src/bridge-python-sdk/__pycache__/*
+dist/*
+src/bridge_python_sdk.egg-info/PKG-INFO
