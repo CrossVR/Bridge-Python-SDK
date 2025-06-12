@@ -192,7 +192,7 @@ def main() -> None:
             rows,            # quilt rows
             aspect,          # display aspect
             normalized_focus,# normalized focus
-            1.0,             # offset (unused)
+            args.depthiness, # depthiness
             1.0,             # zoom (unused)
             args.depth_loc   # depth channel index
         )
