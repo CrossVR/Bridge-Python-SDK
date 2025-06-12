@@ -23,7 +23,13 @@ For a quick burn in test, run one of the examples:
 ```bash
 python -m bridge_python_sdk.Examples.SolarSystem
 python -m bridge_python_sdk.Examples.RotatingCube
+python -m bridge_python_sdk.Examples.DisplayQuilt /path/to/quilt_qs8x6a0.75.png
+python -m bridge_python_sdk.Examples.DisplayRGBD /path/to/rgbd_image.png
 ```
+
+**Known issues:**
+
+DisplayQuilt and DisplayRGBD samples both support video, but currently not at full speed.
 
 On Linux you must run under **X11**; Wayland is not yet supported.
 
