@@ -1,14 +1,13 @@
-# BridgeApi.py — complete **working** version with enhanced debug diagnostics
+# BridgeApi.py
 # --------------------------------------------------------------
-# Loads Looking-Glass Bridge 2.6.x automatically, with **correct**
-# ctypes signatures and convenience wrappers.
+# Loads Looking-Glass Bridge 2.6.x automatically
 # Extra diagnostics are printed to stderr when BridgeAPI(debug=True).
 # --------------------------------------------------------------
 
-import json, os, sys, ctypes, platform
+import json, os, re, sys, ctypes, platform
 from ctypes import (
     c_bool, c_char_p, c_float, c_int32, c_int64,
-    c_uint, c_uint32, c_uint64, c_ulong,  # ← 32-bit “unsigned long”
+    c_uint, c_uint32, c_uint64, c_ulong,
     c_void_p, c_wchar_p, POINTER, byref
 )
 from pathlib import Path
@@ -30,24 +29,51 @@ def _settings_path() -> Path:
         return Path(os.getenv("APPDATA", "")) / "Looking Glass" / "Bridge" / "settings.json"
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Looking Glass" / "Bridge" / "settings.json"
-    return Path.home() / ".config" / "LookingGlass" / "Bridge" / "settings.json"
+    return Path.home() / ".config" / "LookingGlass" / "Bridge" / "settings.json"  # JSON format (newer)
 
 
-def _bridge_install_location(requested: str) -> Optional[Path]:
-    cfg = _settings_path()
-    if not cfg.is_file():
-        return None
-    data = json.loads(cfg.read_text(encoding="utf-8"))
-    inst = {d["version"]: Path(d["path"])
-            for d in data.get("install_locations", [])
-            if _ver_tuple(d["version"]) >= _ver_tuple(_MIN_BRIDGE_VERSION)}
+def _bridge_install_location(requested: str, log) -> Optional[Path]:
+    inst: Dict[str, Path] = {}
+
+    # ---- JSON settings path (newer installers) ----
+    cfg_json = _settings_path()
+    log(f"JSON settings path: {cfg_json}")
+    if cfg_json.is_file():
+        try:
+            data = json.loads(cfg_json.read_text(encoding="utf-8"))
+            inst |= {d["version"]: Path(d["path"])
+                     for d in data.get("install_locations", [])
+                     if _ver_tuple(d["version"]) >= _ver_tuple(_MIN_BRIDGE_VERSION)}
+            log(f"Parsed JSON installs: {inst}")
+        except Exception as e:
+            log(f"Failed to parse JSON settings: {e}")
+
+    # ---- Legacy plain-text list (Linux <2.6) ----
+    legacy_file = Path.home() / ".lgf" / "bridge_install_locations"
+    log(f"Legacy install list: {legacy_file}")
+    if legacy_file.is_file():
+        for line in legacy_file.read_text(encoding="utf-8").splitlines():
+            path = line.strip()
+            if not path:
+                continue
+            m = re.search(r"\d+\.\d+\.\d+", Path(path).name)
+            if m and _ver_tuple(m.group(0)) >= _ver_tuple(_MIN_BRIDGE_VERSION):
+                inst[m.group(0)] = Path(path)
+        log(f"Parsed legacy installs: {inst}")
+
     if not inst:
+        log("No suitable installs found")
         return None
+
     if requested in inst:
+        log(f"Exact match for requested version {requested}")
         return inst[requested]
+
     req_major = requested.split(".")[0]
     same_major = [v for v in inst if v.split(".")[0] == req_major]
-    return inst[max(same_major, key=_ver_tuple)] if same_major else inst[max(inst, key=_ver_tuple)]
+    chosen = inst[max(same_major, key=_ver_tuple)] if same_major else inst[max(inst, key=_ver_tuple)]
+    log(f"Selected install {chosen}")
+    return chosen
 
 # ---------- cross-platform last-error helper --------------------
 def _last_error() -> int:
@@ -78,7 +104,7 @@ class BridgeAPI:
         return val.value
 
     # ------------- ctor -------------------------------------------------
-    def __init__(self, debug: bool = True, library_path: Optional[str] = None,
+    def __init__(self, debug: bool = False, library_path: Optional[str] = None,
                  requested_version: str = _BRIDGE_VERSION):
 
         self.debug = bool(debug)
@@ -91,20 +117,21 @@ class BridgeAPI:
         self._log(f"Requested Bridge version: {requested_version}")
 
         if library_path is None:
-            install_dir = _bridge_install_location(requested_version)
+            install_dir = _bridge_install_location(
+                requested_version,
+                self._log if self.debug else (lambda *_: None)
+            )
 
             # ---------- fallback to packaged binaries ----------
             if install_dir is None:
                 pkg_root = ir.files("bridge_python_sdk") / "bin"
                 if sys.platform.startswith("win"):
-                    subdir = "win"
-                    lib_name = "bridge_inproc.dll"
+                    subdir = "win";            lib_name = "bridge_inproc.dll"
                 elif sys.platform == "darwin":
                     subdir = "mac-m1" if platform.machine().lower() in ("arm64", "aarch64") else "mac-x64"
                     lib_name = "libbridge_inproc.dylib"
                 else:
-                    subdir = "ubuntu"
-                    lib_name = "libbridge_inproc.so"
+                    subdir = "ubuntu";         lib_name = "libbridge_inproc.so"
                 install_dir = pkg_root / subdir
                 library_path = str(install_dir / lib_name)
                 if sys.platform.startswith("win"):
@@ -133,7 +160,7 @@ class BridgeAPI:
 
         self._log(f"Successfully loaded {library_path}")
         self._bind_functions()
-
+        
     # ------------- bind native exports ---------------------------------
     def _bind_functions(self) -> None:
         filename_t = c_wchar_p if sys.platform.startswith("win") else c_char_p
