@@ -9,7 +9,7 @@ import json, os, sys, ctypes, platform
 from ctypes import (
     c_bool, c_char_p, c_float, c_int32, c_int64,
     c_uint, c_uint32, c_uint64, c_ulong,  # ← 32-bit “unsigned long”
-    c_void_p, c_wchar_p, POINTER, byref, get_last_error
+    c_void_p, c_wchar_p, POINTER, byref
 )
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -49,6 +49,12 @@ def _bridge_install_location(requested: str) -> Optional[Path]:
     same_major = [v for v in inst if v.split(".")[0] == req_major]
     return inst[max(same_major, key=_ver_tuple)] if same_major else inst[max(inst, key=_ver_tuple)]
 
+# ---------- cross-platform last-error helper --------------------
+def _last_error() -> int:
+    if hasattr(ctypes, "get_last_error"):
+        return ctypes.get_last_error()
+    return ctypes.get_errno()
+
 # ----------------------------------------------------------------- BridgeAPI
 class BridgeAPI:
     # ------------- private utility -------------------------------------
@@ -64,7 +70,7 @@ class BridgeAPI:
     def _scalar_call(native_fn, idx, c_type, debug: bool):
         val = c_type()
         if not native_fn(idx, byref(val)):
-            err = get_last_error()
+            err = _last_error()
             msg = f"{native_fn.__name__} failed (error {err})"
             if debug:
                 print(msg, file=sys.stderr)
@@ -127,7 +133,6 @@ class BridgeAPI:
 
         self._log(f"Successfully loaded {library_path}")
         self._bind_functions()
-
 
     # ------------- bind native exports ---------------------------------
     def _bind_functions(self) -> None:
