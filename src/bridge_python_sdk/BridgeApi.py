@@ -1,14 +1,15 @@
-# BridgeApi.py — complete **working** version
+# BridgeApi.py — complete **working** version with enhanced debug diagnostics
 # --------------------------------------------------------------
 # Loads Looking-Glass Bridge 2.6.x automatically, with **correct**
 # ctypes signatures and convenience wrappers.
+# Extra diagnostics are printed to stderr when BridgeAPI(debug=True).
 # --------------------------------------------------------------
 
-import json, os, sys, ctypes
+import json, os, sys, ctypes, platform
 from ctypes import (
     c_bool, c_char_p, c_float, c_int32, c_int64,
     c_uint, c_uint32, c_uint64, c_ulong,  # ← 32-bit “unsigned long”
-    c_void_p, c_wchar_p, POINTER, byref
+    c_void_p, c_wchar_p, POINTER, byref, get_last_error
 )
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -60,15 +61,28 @@ class BridgeAPI:
         return getattr(self.lib, name)
 
     @staticmethod
-    def _scalar_call(native_fn, idx, c_type):
+    def _scalar_call(native_fn, idx, c_type, debug: bool):
         val = c_type()
         if not native_fn(idx, byref(val)):
-            raise RuntimeError(native_fn.__name__ + " failed")
+            err = get_last_error()
+            msg = f"{native_fn.__name__} failed (error {err})"
+            if debug:
+                print(msg, file=sys.stderr)
+            raise RuntimeError(msg)
         return val.value
 
     # ------------- ctor -------------------------------------------------
-    def __init__(self, library_path: Optional[str] = None,
+    def __init__(self, debug: bool = True, library_path: Optional[str] = None,
                  requested_version: str = _BRIDGE_VERSION):
+
+        self.debug = bool(debug)
+
+        def _log(msg: str):
+            if self.debug:
+                print("[BridgeAPI]", msg, file=sys.stderr)
+
+        self._log = _log
+        self._log(f"Requested Bridge version: {requested_version}")
 
         if library_path is None:
             install_dir = _bridge_install_location(requested_version)
@@ -87,12 +101,13 @@ class BridgeAPI:
                     lib_name = "libbridge_inproc.so"
                 install_dir = pkg_root / subdir
                 library_path = str(install_dir / lib_name)
-                # ensure dependent DLLs are found on Windows
                 if sys.platform.startswith("win"):
                     ctypes.windll.kernel32.SetDllDirectoryW(str(install_dir))
+                self._log(f"Using bundled Bridge binary: {library_path}")
 
             # ---------- use system install ----------
             else:
+                self._log(f"Found installed Bridge {requested_version} at {install_dir}")
                 if sys.platform.startswith("win"):
                     ctypes.windll.kernel32.SetDllDirectoryW(str(install_dir))
                     library_path = str(install_dir / "bridge_inproc.dll")
@@ -102,10 +117,15 @@ class BridgeAPI:
                     library_path = str(install_dir / "libbridge_inproc.so")
 
         # -------- load the shared library ----------
-        self.lib = (ctypes.WinDLL(library_path, use_last_error=True)
-                    if sys.platform.startswith("win")
-                    else ctypes.CDLL(library_path))
+        try:
+            self.lib = (ctypes.WinDLL(library_path, use_last_error=True)
+                        if sys.platform.startswith("win")
+                        else ctypes.CDLL(library_path))
+        except OSError as e:
+            self._log(f"Failed to load '{library_path}': {e}")
+            raise
 
+        self._log(f"Successfully loaded {library_path}")
         self._bind_functions()
 
 
