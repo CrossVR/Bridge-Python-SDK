@@ -32,9 +32,8 @@ class Render:
         lkg_size: float = 3.0,
         lkg_center: Optional[np.ndarray] = None,
         lkg_up: Optional[np.ndarray] = None,
-        lkg_viewcone: float = 40.0,
-        lkg_invert: bool = True,
-    ) -> None:
+        lkg_viewcone: float = 40.0
+        ) -> None:
         self.debug = debug
         self.window = Window(width, height, title)
         if self.debug:
@@ -62,7 +61,6 @@ class Render:
             near=near,
             far=far,
         )
-        self.lkg_invert = lkg_invert
         self.camera_distance = camera_distance
 
         # ---------------- Bridge setup ----------------
@@ -187,7 +185,7 @@ class Render:
 
         # ----- primary window: use center view (normalized 0.5)
         center_view, center_proj = self.camera.compute_view_projection_matrices(
-            0.5, self.lkg_invert, self.offset, self.focus
+            0.5, True, self.offset, self.focus
         )
         GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
         fbw, fbh = self.window.framebuffer_size()
@@ -209,7 +207,7 @@ class Render:
                     nrm = idx / (total - 1) if total > 1 else 0.5
                     GL.glViewport(x * vw, (self.rows - 1 - y) * vh, vw, vh)
                     v_mat, p_mat = self.camera.compute_view_projection_matrices(
-                        nrm, self.lkg_invert, self.offset, self.focus
+                        nrm, True, self.offset, self.focus
                     )
                     self._draw_objects(v_mat, p_mat)
             GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)

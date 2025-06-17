@@ -21,7 +21,7 @@ class LKGCamera:
     ) -> None:
         self.size = size
         self.center = center if center is not None else np.array([0.0, 0.0, 0.0], dtype=np.float32)
-        self.up = up if up is not None else np.array([0.0, 1.0, 0.0], dtype=np.float32)
+        self.up = up if up is not None else np.array([0.0, -1.0, 0.0], dtype=np.float32)
         self.fov = fov
         self.viewcone = viewcone
         self.aspect = aspect
