@@ -8,6 +8,7 @@ from OpenGL.GL import *
 class Shader:
     def __init__(self, vertex_src: str, fragment_src: str):
         self.id = glCreateProgram()
+        self._numbered_srcs = {}
         vert = self._compile(vertex_src, GL_VERTEX_SHADER)
         frag = self._compile(fragment_src, GL_FRAGMENT_SHADER)
         glAttachShader(self.id, vert)
@@ -26,17 +27,18 @@ class Shader:
     def _compile(self, src: str, shader_type):
         shader = glCreateShader(shader_type)
         glShaderSource(shader, src)
+        numbered_src = '\n'.join(f"{i + 1:4d}: {line}"
+                                 for i, line in enumerate(src.splitlines()))
         glCompileShader(shader)
         if not glGetShaderiv(shader, GL_COMPILE_STATUS):
             log = glGetShaderInfoLog(shader).decode()
-            numbered_src = '\n'.join(f"{i + 1:4d}: {line}"
-                                     for i, line in enumerate(src.splitlines()))
             glDeleteShader(shader)
             type_name = {GL_VERTEX_SHADER: "vertex",
                          GL_FRAGMENT_SHADER: "fragment"}.get(shader_type,
                                                              str(shader_type))
             raise RuntimeError(f"{type_name.capitalize()} shader compile failed:\n"
                                f"{log}\nSource with line numbers:\n{numbered_src}")
+        self._numbered_srcs[shader_type] = numbered_src
         return shader
 
     # --------------------------------------------------------------------- program use
@@ -71,25 +73,32 @@ class Shader:
         """
         loc = glGetUniformLocation(self.id, name)
         if loc == -1:
+            print("Vertex shader source:\n", self._numbered_srcs.get(GL_VERTEX_SHADER, "<none>"))
+            print("Fragment shader source:\n", self._numbered_srcs.get(GL_FRAGMENT_SHADER, "<none>"))
             raise ValueError(f"Uniform '{name}' not found in program")
 
         if len(value) == 1 and isinstance(value[0], (tuple, list, np.ndarray)):
             value = tuple(value[0])
 
-        length = len(value)
-        if length == 1 and isinstance(value[0], (int, np.integer)):
-            glUniform1i(loc, int(value[0]))
-        elif length == 1:
-            glUniform1f(loc, float(value[0]))
-        elif length == 2:
-            glUniform2f(loc, float(value[0]), float(value[1]))
-        elif length == 3:
-            glUniform3f(loc, float(value[0]), float(value[1]), float(value[2]))
-        elif length == 4:
-            glUniform4f(loc, float(value[0]), float(value[1]),
-                        float(value[2]), float(value[3]))
-        else:
-            raise ValueError(f"Unsupported uniform vector length {length}")
+        try:
+            length = len(value)
+            if length == 1 and isinstance(value[0], (int, np.integer)):
+                glUniform1i(loc, int(value[0]))
+            elif length == 1:
+                glUniform1f(loc, float(value[0]))
+            elif length == 2:
+                glUniform2f(loc, float(value[0]), float(value[1]))
+            elif length == 3:
+                glUniform3f(loc, float(value[0]), float(value[1]), float(value[2]))
+            elif length == 4:
+                glUniform4f(loc, float(value[0]), float(value[1]),
+                            float(value[2]), float(value[3]))
+            else:
+                raise ValueError(f"Unsupported uniform vector length {length}")
+        except Exception as e:
+            print("Vertex shader source:\n", self._numbered_srcs.get(GL_VERTEX_SHADER, "<none>"))
+            print("Fragment shader source:\n", self._numbered_srcs.get(GL_FRAGMENT_SHADER, "<none>"))
+            raise
 
     # --------------------------------------------------------------------- matrix setters (NEW)
     def set_uniform_matrix(self, name: str, matrix, transpose: bool = True):

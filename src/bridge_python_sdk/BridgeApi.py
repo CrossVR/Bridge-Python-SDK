@@ -104,7 +104,7 @@ class BridgeAPI:
         return val.value
 
     # ------------- ctor -------------------------------------------------
-    def __init__(self, debug: bool = False, library_path: Optional[str] = None,
+    def __init__(self, debug: bool = True, library_path: Optional[str] = None,
                  requested_version: str = _BRIDGE_VERSION):
 
         self.debug = bool(debug)
@@ -160,7 +160,7 @@ class BridgeAPI:
 
         self._log(f"Successfully loaded {library_path}")
         self._bind_functions()
-        
+
     # ------------- bind native exports ---------------------------------
     def _bind_functions(self) -> None:
         filename_t = c_wchar_p if sys.platform.startswith("win") else c_char_p

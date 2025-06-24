@@ -312,7 +312,8 @@ def main():
     dust_handle   = renderer.add_object(dust_mesh, dust_shader)
 
     # ---------------- textures ------------------------------
-    env_tex = Texture2D(r"C:\Users\zinsl\Downloads\small_cave.jpg")
+    # If this file does not exist download it from here: https://polyhaven.com/a/small_cave
+    env_tex = Texture2D(r"assets/small_cave.jpg")
     for sh in (cave_shader, crystal_shader):
         sh.use(); sh.set_uniform("u_env",0)
     env_tex.bind(0)

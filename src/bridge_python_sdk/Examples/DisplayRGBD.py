@@ -49,13 +49,6 @@ def parse_args():
 def main() -> None:
     args = parse_args()
     
-    if not (-1.0 <= args.focus <= 1.0):
-        print("Error: --focus must be between -1 and 1.", file=sys.stderr)
-        sys.exit(1)
-    if not (0.0 <= args.depthiness <= 3.0):
-        print("Error: --depthiness must be between 0 and 3.", file=sys.stderr)
-        sys.exit(1)
-
     base = os.path.basename(args.rgbd)
     ext = os.path.splitext(base)[1].lower()
     is_video = ext in (".mp4", ".mov", ".avi", ".mkv", ".webm")
