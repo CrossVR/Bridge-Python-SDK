@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Rendering/Stream.py — streaming back-end for StreamAndDisplayRGBD CLI
-# (full file – no omissions, now with extra start-up diagnostics)
+# (full file – no omissions, now with early progress messages)
 
 import logging
 import os
@@ -16,7 +16,7 @@ import numpy as np
 from OpenGL import GL
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from BridgeApi import BridgeAPI, PixelFormats    # noqa: E402
+from BridgeApi import BridgeAPI, PixelFormats  # noqa: E402
 
 # ════════════════════════════════════════════════════════════════════════
 #                          ffmpeg helpers
@@ -31,7 +31,7 @@ class _FFmpegMixin:
     @staticmethod
     def _spawn(cmd, tag, capture_out=False):
         """Start *cmd* and route stderr lines to the Python logger."""
-        logging.debug("%s: exec %s", tag, " ".join(cmd))
+        logging.info("%s: exec %s", tag, " ".join(cmd))
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE if capture_out else subprocess.DEVNULL,
@@ -55,7 +55,6 @@ class _FFmpegMixin:
     # ---------- URL helpers ----------
     @classmethod
     def _udp_url(cls, url):
-        """Add fifo_size/overrun_nonfatal to any udp or prompeg+udp URL."""
         p = urlparse(url)
         if p.scheme not in ("udp", "prompeg+udp"):
             return url
@@ -67,30 +66,21 @@ class _FFmpegMixin:
     # ---------- probing helpers ----------
     @classmethod
     def _probe_file(cls, path):
-        w, h = map(
-            int,
-            subprocess.check_output(
-                [
-                    "ffprobe", "-v", "error", "-select_streams", "v:0",
-                    "-show_entries", "stream=width,height", "-of", "csv=p=0", path
-                ],
-                text=True,
-            ).split(","),
+        return cls._do_probe(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height", "-of", "csv=p=0", path]
         )
-        assert not w & 1 and w >= cls._MIN_DIM and h >= cls._MIN_DIM
-        return w, h
 
     @classmethod
     def _probe_stream(cls, url, timeout_s):
+        cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
+               "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", url]
+        return cls._do_probe(cmd, timeout_s)
+
+    @classmethod
+    def _do_probe(cls, cmd, timeout_s=None):
         try:
-            out = subprocess.check_output(
-                [
-                    "ffprobe", "-v", "error", "-select_streams", "v:0",
-                    "-show_entries", "stream=width,height",
-                    "-of", "csv=s=x:p=0", url
-                ],
-                text=True, timeout=timeout_s,
-            ).strip()
+            out = subprocess.check_output(cmd, text=True, timeout=timeout_s).strip()
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
             return None
         for line in out.splitlines():
@@ -103,10 +93,8 @@ class _FFmpegMixin:
     @classmethod
     def _probe_udp(cls, url, timeout_s):
         deadline = time.time() + timeout_s
-        cmd = [
-            "ffmpeg", "-v", "warning", "-fflags", "nobuffer", "-flags", "low_delay",
-            "-i", cls._udp_url(url), "-frames:v", "1", "-f", "null", "-"
-        ]
+        cmd = ["ffmpeg", "-v", "warning", "-fflags", "nobuffer", "-flags", "low_delay",
+               "-i", cls._udp_url(url), "-frames:v", "1", "-f", "null", "-"]
         while time.time() < deadline:
             proc = cls._spawn(cmd, "probe:udp")
             for raw in proc.stderr:
@@ -289,34 +277,30 @@ class StreamReceiver(_FFmpegMixin):
     def run(self):
         backoff = 1
         while True:
+            dec = None
             try:
-                # --- figure out dimensions & report origin ---------------
-                origin = "CLI"
+                # --- determine resolution --------------------------------
                 if self.a.width and self.a.height:
+                    logging.info("using user-supplied resolution %dx%d", self.a.width, self.a.height)
                     w, h = self.a.width, self.a.height
                 else:
+                    logging.info("probing with ffprobe …")
                     probe = self._probe_stream(self.a.url, self.a.wait)
                     if probe:
                         w, h = probe
-                        origin = "ffprobe"
+                        logging.info("stream resolution %dx%d (via ffprobe)", w, h)
                     else:
+                        logging.info("probing via UDP sniff …")
                         probe = self._probe_udp(self.a.url, self.a.wait)
                         if probe:
                             w, h = probe
-                            origin = "UDP sniff"
+                            logging.info("stream resolution %dx%d (via UDP sniff)", w, h)
                         else:
-                            w = h = None
-
-                if not w:
-                    raise RuntimeError("cannot detect stream dimensions")
-
-                logging.info("stream resolution %dx%d (via %s)", w, h, origin)
+                            raise RuntimeError("cannot detect stream dimensions")
 
                 # --- start decoder --------------------------------------
-                cmd = self._dec_cmd()
                 logging.info("decoder URL: %s", self._udp_url(self.a.url))
-                logging.debug("decoder cmd : %s", " ".join(cmd))
-
+                cmd = self._dec_cmd()
                 dec = self._spawn(cmd, "ffmpeg:dec", capture_out=True)
 
                 # quick check: did ffmpeg exit immediately?
@@ -339,13 +323,11 @@ class StreamReceiver(_FFmpegMixin):
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 30)
             finally:
-                # ensure decoder cleanup
-                try:
-                    if 'dec' in locals() and dec.poll() is None:
-                        dec.terminate()
+                if dec and dec.poll() is None:
+                    dec.terminate()
+                    try:
                         dec.wait(timeout=2)
-                except Exception:
-                    if 'dec' in locals() and dec.poll() is None:
+                    except subprocess.TimeoutExpired:
                         dec.kill()
                 logging.debug("decoder clean-up complete")
                 logging.info("stream ended — reconnecting immediately")
