@@ -15,8 +15,6 @@ def recv_command(args): StreamReceiver(args).run()
 
 def main():
     parser = argparse.ArgumentParser("SBS RGB-D streamer (OpenGL preview)")
-    parser.add_argument("--log", default="INFO",
-                        choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("send")
@@ -44,7 +42,7 @@ def main():
     r.add_argument("--diag", action="store_true")
 
     args = parser.parse_args()
-    logging.basicConfig(level=getattr(logging, args.log),
+    logging.basicConfig(level=getattr(logging, "DEBUG"),
                         format="%(asctime)s | %(levelname)-8s | %(message)s",
                         datefmt="%H:%M:%S")
 

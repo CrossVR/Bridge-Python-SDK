@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Rendering/Stream.py — streaming back-end for StreamAndDisplayRGBD CLI
-# (full file – no omissions)
+# (full file – no omissions, now with extra start-up diagnostics)
 
 import logging
 import os
@@ -16,18 +16,22 @@ import numpy as np
 from OpenGL import GL
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from BridgeApi import BridgeAPI, PixelFormats  # noqa: E402
+from BridgeApi import BridgeAPI, PixelFormats    # noqa: E402
 
-# ───────── shared ffmpeg helpers ─────────
+# ════════════════════════════════════════════════════════════════════════
+#                          ffmpeg helpers
+# ════════════════════════════════════════════════════════════════════════
 class _FFmpegMixin:
-    _MIN_DIM            = 32
-    _FIFO_BYTES         = 5_000_000
-    _VIDEO_RE           = re.compile(r"Video:.*? (\d+)x(\d+)")
-    _WXH_RE             = re.compile(r"(\d+)[x,](\d+)")
+    _MIN_DIM     = 32
+    _FIFO_BYTES  = 5_000_000
+    _VIDEO_RE    = re.compile(r"Video:.*? (\d+)x(\d+)")
+    _WXH_RE      = re.compile(r"(\d+)[x,](\d+)")
 
     # ---------- process spawning / logging ----------
     @staticmethod
     def _spawn(cmd, tag, capture_out=False):
+        """Start *cmd* and route stderr lines to the Python logger."""
+        logging.debug("%s: exec %s", tag, " ".join(cmd))
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE if capture_out else subprocess.DEVNULL,
@@ -51,6 +55,7 @@ class _FFmpegMixin:
     # ---------- URL helpers ----------
     @classmethod
     def _udp_url(cls, url):
+        """Add fifo_size/overrun_nonfatal to any udp or prompeg+udp URL."""
         p = urlparse(url)
         if p.scheme not in ("udp", "prompeg+udp"):
             return url
@@ -88,8 +93,8 @@ class _FFmpegMixin:
             ).strip()
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
             return None
-        for ln in out.splitlines():
-            if (m := cls._WXH_RE.search(ln)):
+        for line in out.splitlines():
+            if (m := cls._WXH_RE.search(line)):
                 w, h = int(m[1]), int(m[2])
                 if not w & 1 and w >= cls._MIN_DIM and h >= cls._MIN_DIM:
                     return w, h
@@ -108,13 +113,17 @@ class _FFmpegMixin:
                 if (m := cls._VIDEO_RE.search(raw.decode(errors="ignore"))):
                     proc.kill()
                     w, h = int(m[1]), int(m[2])
-                    return (w, h) if not w & 1 and w >= cls._MIN_DIM and h >= cls._MIN_DIM else None
+                    if not w & 1 and w >= cls._MIN_DIM and h >= cls._MIN_DIM:
+                        return w, h
+                    return None
             time.sleep(0.4)
             proc.kill()
         return None
 
 
-# ───────── OpenGL preview loop (shared) ─────────
+# ════════════════════════════════════════════════════════════════════════
+#                    shared OpenGL preview loop
+# ════════════════════════════════════════════════════════════════════════
 def _norm_focus(focus, depth):
     return 0.005 + (((focus * depth) + 1) / 2) * (-0.007 - 0.005)
 
@@ -156,6 +165,7 @@ def preview_loop(proc, width, height, depth_loc, depth_scale, focus, diag):
 
         raw = bytes(buf[:bpf])
         del buf[:bpf]
+
         try:
             rgba = np.frombuffer(raw, dtype=np.uint8).reshape((height, width, 4))
         except ValueError:
@@ -187,13 +197,15 @@ def preview_loop(proc, width, height, depth_loc, depth_scale, focus, diag):
     glfw.terminate()
 
 
-# ───────── StreamSender ─────────
+# ════════════════════════════════════════════════════════════════════════
+#                           StreamSender
+# ════════════════════════════════════════════════════════════════════════
 class StreamSender(_FFmpegMixin):
     def __init__(self, args):
         self.a = args
         self.width, self.height = self._probe_file(args.video)
 
-    # ---------- command builders ----------
+    # ---------- encoder / preview commands ----------
     def _enc_cmd(self):
         a, url = self.a, self._udp_url(self.a.url)
         opts = [
@@ -258,7 +270,9 @@ class StreamSender(_FFmpegMixin):
                         p.kill()
 
 
-# ───────── StreamReceiver ─────────
+# ════════════════════════════════════════════════════════════════════════
+#                           StreamReceiver
+# ════════════════════════════════════════════════════════════════════════
 class StreamReceiver(_FFmpegMixin):
     def __init__(self, args):
         self.a = args
@@ -276,35 +290,46 @@ class StreamReceiver(_FFmpegMixin):
         backoff = 1
         while True:
             try:
+                # --- figure out dimensions & report origin ---------------
+                origin = "CLI"
                 if self.a.width and self.a.height:
                     w, h = self.a.width, self.a.height
                 else:
-                    w, h = (
-                        self._probe_stream(self.a.url, self.a.wait)
-                        or self._probe_udp(self.a.url, self.a.wait)
-                        or (None, None)
-                    )
+                    probe = self._probe_stream(self.a.url, self.a.wait)
+                    if probe:
+                        w, h = probe
+                        origin = "ffprobe"
+                    else:
+                        probe = self._probe_udp(self.a.url, self.a.wait)
+                        if probe:
+                            w, h = probe
+                            origin = "UDP sniff"
+                        else:
+                            w = h = None
+
                 if not w:
                     raise RuntimeError("cannot detect stream dimensions")
 
-                dec = self._spawn(self._dec_cmd(), "ffmpeg:dec", capture_out=True)
-                try:
-                    logging.info("◀ receiving %dx%d from %s", w, h, self.a.url)
-                    preview_loop(
-                        dec, w, h,
-                        self.a.depth_loc, self.a.depthiness,
-                        self.a.focus, self.a.diag,
-                    )
-                finally:
-                    if dec.poll() is None:
-                        dec.terminate()
-                        try:
-                            dec.wait(timeout=2)
-                        except subprocess.TimeoutExpired:
-                            dec.kill()
+                logging.info("stream resolution %dx%d (via %s)", w, h, origin)
 
-                logging.info("stream ended — reconnecting immediately")
-                backoff = 1
+                # --- start decoder --------------------------------------
+                cmd = self._dec_cmd()
+                logging.info("decoder URL: %s", self._udp_url(self.a.url))
+                logging.debug("decoder cmd : %s", " ".join(cmd))
+
+                dec = self._spawn(cmd, "ffmpeg:dec", capture_out=True)
+
+                # quick check: did ffmpeg exit immediately?
+                time.sleep(0.5)
+                if dec.poll() is not None:
+                    raise RuntimeError(f"ffmpeg exited instantly (code {dec.returncode})")
+
+                logging.info("◀ receiving %dx%d from %s", w, h, self.a.url)
+                preview_loop(
+                    dec, w, h,
+                    self.a.depth_loc, self.a.depthiness,
+                    self.a.focus, self.a.diag,
+                )
             except KeyboardInterrupt:
                 logging.info("interrupted — exiting receiver")
                 break
@@ -313,3 +338,15 @@ class StreamReceiver(_FFmpegMixin):
                 logging.info("retrying in %d s", backoff)
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 30)
+            finally:
+                # ensure decoder cleanup
+                try:
+                    if 'dec' in locals() and dec.poll() is None:
+                        dec.terminate()
+                        dec.wait(timeout=2)
+                except Exception:
+                    if 'dec' in locals() and dec.poll() is None:
+                        dec.kill()
+                logging.debug("decoder clean-up complete")
+                logging.info("stream ended — reconnecting immediately")
+                backoff = 1
