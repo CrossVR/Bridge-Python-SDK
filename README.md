@@ -12,7 +12,32 @@ Integrate your existing Python-based 3D workflow with any Looking Glass display 
 
 ## Installation
 
-NOTE: This is an alpha release for testing.
+
+Setup a virtual environment:
+
+```bash
+# Create virtual environment in .venv (Linux)
+python3 -m venv .venv
+
+# Activate it
+source .venv/bin/activate
+```
+
+```bash
+# Create virtual environment in .venv (macOS)
+python -m venv .venv
+
+# Activate it
+source .venv/bin/activate
+```
+
+```bash
+# Create virtual environment in venv (Windows)
+python -m venv venv
+
+# Activate it
+"venv\Scripts\activate"
+```
 
 ```bash
 pip install "bridge-python-sdk @ git+https://github.com/Looking-Glass/bridge-python-sdk"
@@ -26,6 +51,8 @@ python -m bridge_python_sdk.Examples.RotatingCube
 python -m bridge_python_sdk.Examples.DisplayQuilt /path/to/quilt_qs8x6a0.75.png
 python -m bridge_python_sdk.Examples.DisplayRGBD /path/to/rgbd_image.png
 ```
+
+### Note: you will need to run the activate command again
 
 **Known issues:**
 
