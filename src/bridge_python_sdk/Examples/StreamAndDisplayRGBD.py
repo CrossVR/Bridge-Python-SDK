@@ -1,52 +1,76 @@
 #!/usr/bin/env python3
-# StreamAndDisplayRGBD.py — CLI wrapper; streaming logic lives in StreamSender / StreamReceiver
+# StreamAndDisplayRGBD.py — thin CLI wrapper; heavy lifting is done in
+# Rendering/Stream.py (StreamSender / StreamReceiver).
 
 import argparse
 import logging
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from Rendering.Stream import *
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, ROOT)
 
-def send_command(args): StreamSender(args).run()
-def recv_command(args): StreamReceiver(args).run()
+from Rendering.Stream import StreamSender, StreamReceiver        # noqa: E402
 
 
-def main():
-    parser = argparse.ArgumentParser("SBS RGB-D streamer (OpenGL preview)")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+def main() -> None:
+    parser = argparse.ArgumentParser("SBS RGB-D UDP streamer (OpenGL preview)")
+    sub    = parser.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("send")
-    s.add_argument("video")
-    s.add_argument("--url", default="udp://127.0.0.1:5000")
-    s.add_argument("--gop", type=int, default=30)
-    s.add_argument("--bitrate", type=int, default=8000)
-    s.add_argument("--fec", action="store_true")
-    s.add_argument("--nvenc", action="store_true", default=True)
-    s.add_argument("--yuv444", action="store_true")
-    s.add_argument("-q", "--quiet", action="store_true")
-    s.add_argument("--depthiness", type=float, default=1.0)
-    s.add_argument("--focus", type=float, default=0.0)
-    s.add_argument("--depth-loc", type=int, default=2)
-    s.add_argument("--diag", action="store_true")
+    # ───────────────────────── sender ──────────────────────────
+    send = sub.add_parser("send", help="stream a video file or DirectShow camera")
 
-    r = sub.add_parser("recv")
-    r.add_argument("--url", default="udp://localhost:5000")
-    r.add_argument("--width", type=int)
-    r.add_argument("--height", type=int)
-    r.add_argument("--wait", type=float, default=30)
-    r.add_argument("--depthiness", type=float, default=1.0)
-    r.add_argument("--focus", type=float, default=0.0)
-    r.add_argument("--depth-loc", type=int, default=2)
-    r.add_argument("--diag", action="store_true")
+    send.add_argument("video", nargs="?",
+                      help="video file (ignored when --camera is set)")
+    send.add_argument("--camera", metavar="ID|NAME",
+                      help="capture from DirectShow camera (numeric index or quoted name)")
+
+    # camera-specific tuning
+    send.add_argument("--cam-size",  metavar="WxH", default=None,
+                      help="force camera resolution, e.g. 1920x1080")
+    send.add_argument("--cam-fps",   metavar="N",   type=int,  default=None,
+                      help="force camera frame-rate, e.g. 60")
+    send.add_argument("--cam-pixfmt", metavar="FMT", default=None,
+                      help="force camera pixel-format (yuyv422, nv12, rgb24 …)")
+
+    # generic encoder/network flags
+    send.add_argument("--url",      default="udp://127.0.0.1:5000")
+    send.add_argument("--gop",      type=int, default=30)
+    send.add_argument("--bitrate",  type=int, default=8000)
+    send.add_argument("--fec",      action="store_true")
+    send.add_argument("--nvenc",    action="store_true", default=True)
+    send.add_argument("--yuv444",   action="store_true")
+    send.add_argument("-q", "--quiet", action="store_true")
+
+    # RGB-D preview tuning
+    send.add_argument("--depthiness", type=float, default=1.0)
+    send.add_argument("--focus",      type=float, default=0.0)
+    send.add_argument("--depth-loc",  type=int,   default=2)
+    send.add_argument("--diag",       action="store_true")
+
+    # ───────────────────────── receiver ──────────────────────────
+    recv = sub.add_parser("recv", help="receive and preview an RGB-D stream")
+    recv.add_argument("--url",    default="udp://127.0.0.1:5000")
+    recv.add_argument("--width",  type=int)
+    recv.add_argument("--height", type=int)
+    recv.add_argument("--wait",   type=float, default=30)
+
+    recv.add_argument("--depthiness", type=float, default=1.0)
+    recv.add_argument("--focus",      type=float, default=0.0)
+    recv.add_argument("--depth-loc",  type=int,   default=2)
+    recv.add_argument("--diag",       action="store_true")
 
     args = parser.parse_args()
-    logging.basicConfig(level=getattr(logging, "DEBUG"),
-                        format="%(asctime)s | %(levelname)-8s | %(message)s",
-                        datefmt="%H:%M:%S")
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s | %(levelname)-8s | %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
-    (send_command if args.cmd == "send" else recv_command)(args)
+    if args.cmd == "send":
+        StreamSender(args).run()
+    else:
+        StreamReceiver(args).run()
 
 
 if __name__ == "__main__":
