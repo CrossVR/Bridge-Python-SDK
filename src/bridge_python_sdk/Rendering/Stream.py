@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Rendering/Stream.py — RGB-D UDP sender / receiver.
-# Works with video files *and* any Windows DirectShow camera.
+# Rendering/Stream.py — RGB-D UDP sender / receiver with robust A/V handling.
+# Entire module is self-contained; drop-in replacement for the old file.
 
 from __future__ import annotations
 
@@ -21,20 +21,21 @@ from OpenGL import GL
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, ROOT)
 
-from BridgeApi import BridgeAPI, PixelFormats                                        # noqa: E402
+from BridgeApi import BridgeAPI, PixelFormats                                              # noqa: E402
+
 
 # ════════════════════════════════════════════════════════════════════
 #                           ffmpeg helpers
 # ════════════════════════════════════════════════════════════════════
 class _FFmpegMixin:
-    _MIN_DIM     = 32
-    _FIFO_BYTES  = 5_000_000
-    _RE_WXH      = re.compile(r"(\d+)[x,](\d+)")
-    _RE_DIMLINE  = re.compile(r"Video:.*? (\d+)x(\d+)")
+    _MIN_DIM    = 32
+    _FIFO_BYTES = 5_000_000
+    _RE_WXH     = re.compile(r"(\d+)[x,](\d+)")
+    _RE_DEVICE  = re.compile(r"]\s*\"([^\"]+)\"\s+\(video\)", re.IGNORECASE)
 
-    # ── spawn + log ────────────────────────────────────────────────────
+    # ── spawn + log ───────────────────────────────────────────────────
     @staticmethod
-    def _spawn(cmd: Sequence[str], tag: str, *, capture_out=False) -> subprocess.Popen:
+    def _spawn(cmd: Sequence[str], tag: str, *, capture_out: bool = False) -> subprocess.Popen:
         logging.info("%s: exec %s", tag, " ".join(cmd))
         proc = subprocess.Popen(
             cmd,
@@ -42,9 +43,8 @@ class _FFmpegMixin:
             stderr=subprocess.PIPE,
             bufsize=0,
         )
-        threading.Thread(
-            target=_FFmpegMixin._forward_log, args=(proc.stderr, tag), daemon=True
-        ).start()
+        threading.Thread(target=_FFmpegMixin._forward_log,
+                         args=(proc.stderr, tag), daemon=True).start()
         return proc
 
     @staticmethod
@@ -54,7 +54,7 @@ class _FFmpegMixin:
                 break
             logging.warning("%s | %s", tag, raw.decode(errors="replace").rstrip())
 
-    # ── UDP helper ─────────────────────────────────────────────────────
+    # ── UDP helper ────────────────────────────────────────────────────
     @classmethod
     def _udp_url(cls, url: str) -> str:
         p = urlparse(url)
@@ -65,17 +65,12 @@ class _FFmpegMixin:
         q.setdefault("overrun_nonfatal", "1")
         return urlunparse(p._replace(query=urlencode(q)))
 
-    # ── dshow device list (numeric ↔ name) ─────────────────────────────
-    _RE_DEVICE = re.compile(r"]\s*\"([^\"]+)\"\s+\(video\)", re.IGNORECASE)
-
+    # ── dshow device list (numeric ↔ name) ────────────────────────────
     @staticmethod
     def _list_dshow_video_devices() -> List[str]:
-        cmd = [
-            "ffmpeg", "-hide_banner", "-list_devices", "true",
-            "-f", "dshow", "-i", "dummy",
-        ]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
+        cmd = ["ffmpeg", "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True)
         devices, in_video = [], False
         for ln in proc.stderr.splitlines():
             if "DirectShow video devices" in ln:
@@ -84,19 +79,20 @@ class _FFmpegMixin:
             if "DirectShow audio devices" in ln:
                 break
             if "(video)" in ln.lower():
-                match = _FFmpegMixin._RE_DEVICE.search(ln)
-                if match:
-                    devices.append(match.group(1))
+                m = _FFmpegMixin._RE_DEVICE.search(ln)
+                if m:
+                    devices.append(m.group(1))
         return devices
 
-    # ── generic width×height probe ─────────────────────────────────────
+    # ── generic width×height probe ────────────────────────────────────
     @classmethod
-    def _probe_ffprobe(cls, cmd: Sequence[str], timeout: float | None) -> Optional[tuple[int, int]]:
+    def _probe_ffprobe(cls, cmd: Sequence[str],
+                       timeout: float | None) -> Optional[tuple[int, int]]:
         try:
-            out = subprocess.check_output(cmd, text=True, timeout=timeout).strip()
+            out = subprocess.check_output(cmd, text=True,
+                                          timeout=timeout).strip()
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return None
-
         for ln in out.splitlines():
             m = cls._RE_WXH.search(ln)
             if m:
@@ -114,15 +110,8 @@ def _norm_focus(f: float, d: float) -> float:
     return a + (((f * d) + 1) / 2) * (b - a)
 
 
-def preview_loop(
-    proc: subprocess.Popen,
-    w: int,
-    h: int,
-    depth_loc: int,
-    depth_scale: float,
-    focus: float,
-    diag: bool,
-) -> None:
+def preview_loop(proc: subprocess.Popen, w: int, h: int, depth_loc: int,
+                 depth_scale: float, focus: float, diag: bool) -> None:
     if not glfw.init():
         sys.exit("GLFW init failed")
 
@@ -139,7 +128,8 @@ def preview_loop(
     GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
     GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
     GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
-    GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, w, h, 0, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, None)
+    GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, w, h, 0,
+                    GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, None)
 
     frame_bytes, buf, frames, t0 = w * h * 4, bytearray(), 0, time.time()
     f_norm = _norm_focus(focus, depth_scale)
@@ -162,7 +152,8 @@ def preview_loop(
             continue
 
         GL.glBindTexture(GL.GL_TEXTURE_2D, tex)
-        GL.glTexSubImage2D(GL.GL_TEXTURE_2D, 0, 0, 0, w, h, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, rgba)
+        GL.glTexSubImage2D(GL.GL_TEXTURE_2D, 0, 0, 0, w, h,
+                           GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, rgba)
 
         bridge.draw_interop_rgbd_texture_gl(
             handle, tex, PixelFormats.RGBA,
@@ -183,19 +174,105 @@ def preview_loop(
 
 
 # ════════════════════════════════════════════════════════════════════
+#                         StreamReceiver
+# ════════════════════════════════════════════════════════════════════
+class StreamReceiver(_FFmpegMixin):
+    """Receives an MPEG-TS / ProMPEG UDP stream and previews video **with synchronous audio**."""
+
+    _AUDIO_PORT = 54002  # localhost port for tee’d audio
+
+    def __init__(self, args):
+        self.a = args
+
+    # ───── ffmpeg demux/tee: raw RGBA to stdout, audio to local UDP ───
+    def _dec_cmd(self) -> list[str]:
+        audio_url = f"udp://127.0.0.1:{self._AUDIO_PORT}"
+        return [
+            "ffmpeg", "-v", "warning", "-fflags", "nobuffer", "-flags", "low_delay",
+            "-i", self._udp_url(self.a.url),
+            "-map", "0:v:0", "-vf", "format=rgba",
+            "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1",
+            "-map", "0:a:0?", "-c:a", "copy",
+            "-f", "mpegts", audio_url,
+        ]
+
+    # ───── tiny ffplay instance just for audio ────────────────────────
+    def _audio_cmd(self) -> list[str]:
+        return [
+            "ffplay", "-v", "warning",
+            "-nodisp", "-autoexit", "-fflags", "nobuffer",
+            f"udp://127.0.0.1:{self._AUDIO_PORT}",
+        ]
+
+    # ───── public run() ───────────────────────────────────────────────
+    def run(self) -> None:
+        backoff = 1
+        while True:
+            dec: Optional[subprocess.Popen] = None
+            audio: Optional[subprocess.Popen] = None
+            try:
+                # ── detect resolution ────────────────────────────────
+                if self.a.width and self.a.height:
+                    w, h = self.a.width, self.a.height
+                else:
+                    probe = self._probe_ffprobe(
+                        [
+                            "ffprobe", "-v", "error", "-select_streams", "v:0",
+                            "-show_entries", "stream=width,height",
+                            "-of", "csv=s=x:p=0",
+                            self._udp_url(self.a.url),
+                        ],
+                        timeout=self.a.wait,
+                    ) or (640, 360)
+                    w, h = probe
+                logging.info("stream resolution %dx%d", w, h)
+
+                # ── start unified demux/tee ─────────────────────────
+                dec = self._spawn(self._dec_cmd(), "ffmpeg:dec", capture_out=True)
+                time.sleep(0.5)
+                if dec.poll() is not None:
+                    raise RuntimeError(f"decoder quit instantly (code {dec.returncode})")
+
+                # ── fire up audio sink ───────────────────────────────
+                audio = self._spawn(self._audio_cmd(), "ffplay:audio")
+                time.sleep(0.2)
+
+                logging.info("◀ receiving %dx%d + audio from %s", w, h, self.a.url)
+                preview_loop(dec, w, h, self.a.depth_loc, self.a.depthiness,
+                             self.a.focus, self.a.diag)
+
+            except KeyboardInterrupt:
+                logging.info("interrupted — leaving receiver")
+                break
+            except Exception as exc:
+                logging.error("recv error: %s", exc)
+                logging.info("retrying in %d s", backoff)
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+            finally:
+                for p in (dec, audio):
+                    if p and p.poll() is None:
+                        p.terminate()
+                        try:
+                            p.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            p.kill()
+                backoff = 1
+
+
+# ════════════════════════════════════════════════════════════════════
 #                           StreamSender
 # ════════════════════════════════════════════════════════════════════
 class StreamSender(_FFmpegMixin):
     def __init__(self, args):
         self.a = args
-
         if args.camera:
             self.dshow_arg = self._resolve_camera_arg(args.camera)
             probe = self._probe_ffprobe(
                 [
                     "ffprobe", "-v", "error", "-f", "dshow",
-                    "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0",
-                    "-i", self.dshow_arg,
+                    "-show_entries", "stream=width,height",
+                    "-of", "csv=s=x:p=0", "-i", self.dshow_arg,
                 ],
                 timeout=5.0,
             )
@@ -208,13 +285,13 @@ class StreamSender(_FFmpegMixin):
             self.width, self.height = self._probe_ffprobe(
                 [
                     "ffprobe", "-v", "error", "-select_streams", "v:0",
-                    "-show_entries", "stream=width,height", "-of", "csv=p=0",
-                    args.video,
+                    "-show_entries", "stream=width,height",
+                    "-of", "csv=p=0", args.video,
                 ],
                 timeout=None,
             ) or (1280, 720)
 
-    # ───── camera index → name ──────────────────────────────────────────
+    # ───── camera index → name ───────────────────────────────────────
     @classmethod
     def _resolve_camera_arg(cls, cam: str) -> str:
         if cam.isdigit():
@@ -227,59 +304,39 @@ class StreamSender(_FFmpegMixin):
             return f"video={devices[idx]}"
         return f"video={cam}"
 
-    # ───── ffmpeg command builders ──────────────────────────────────────
+    # ───── ffmpeg command builders ───────────────────────────────────
     def _dshow_input(self, retry_without_pixfmt: bool = False) -> list[str]:
         a = self.a
         size = a.cam_size
         fps  = str(a.cam_fps)
         video_size = ["-video_size", size] if size else []
         framerate  = ["-framerate", fps]  if fps else []
-        pixf = (
-            ["-pixel_format", a.cam_pixfmt]
-            if a.cam_pixfmt and not retry_without_pixfmt
-            else []
-        )
-
-        return (
-            ["-f", "dshow"]
-            + ["-thread_queue_size", "1024"]
-            + video_size
-            + framerate
-            + pixf
-            + ["-i", self.dshow_arg]
-        )
+        pixf = (["-pixel_format", a.cam_pixfmt]
+                if a.cam_pixfmt and not retry_without_pixfmt else [])
+        return (["-f", "dshow", "-thread_queue_size", "1024"] +
+                video_size + framerate + pixf + ["-i", self.dshow_arg])
 
     def _file_input(self) -> list[str]:
         return ["-re", "-stream_loop", "-1", "-i", self.a.video]
 
     def _enc_cmd(self, retry_without_pixfmt: bool = False) -> list[str]:
         a, url = self.a, self._udp_url(self.a.url)
+        input_part = (self._dshow_input(retry_without_pixfmt)
+                      if self.dshow_arg else self._file_input())
 
-        input_part = self._dshow_input(retry_without_pixfmt) if self.dshow_arg else self._file_input()
-
-        base = [
-            "-g", str(a.gop),
-            "-force_key_frames", f"expr:gte(t,n_forced*{a.gop/30:.2f})",
-        ]
+        base = ["-g", str(a.gop),
+                "-force_key_frames", f"expr:gte(t,n_forced*{a.gop/30:.2f})"]
 
         if a.nvenc:
-            base += [
-                "-c:v", "h264_nvenc",
-                "-pix_fmt", "yuv444p" if a.yuv444 else "yuv420p",
-                "-preset", "p1", "-tune", "ull", "-zerolatency", "1",
-            ]
+            base += ["-c:v", "h264_nvenc",
+                     "-pix_fmt", "yuv444p" if a.yuv444 else "yuv420p",
+                     "-preset", "p1", "-tune", "ull", "-zerolatency", "1"]
         else:
-            base += [
-                "-c:v", "libx264rgb", "-preset", "veryfast",
-                "-tune", "zerolatency", "-pix_fmt", "rgb24",
-            ]
+            base += ["-c:v", "libx264rgb", "-preset", "veryfast",
+                     "-tune", "zerolatency", "-pix_fmt", "rgb24"]
 
-        base += [
-            "-b:v", f"{a.bitrate}k",
-            "-maxrate", f"{a.bitrate}k",
-            "-minrate", f"{a.bitrate}k",
-            "-bufsize", f"{a.bitrate//2}k",
-        ]
+        base += ["-b:v", f"{a.bitrate}k", "-maxrate", f"{a.bitrate}k",
+                 "-minrate", f"{a.bitrate}k", "-bufsize", f"{a.bitrate//2}k"]
 
         muxer = "prompeg" if a.fec else "mpegts"
         if a.fec:
@@ -288,15 +345,13 @@ class StreamSender(_FFmpegMixin):
 
         return ["ffmpeg", "-v", "error", *input_part, *base, "-f", muxer, url]
 
-    # ───── decoder cmd for local preview of *files* ─────────────────────
+    # ───── decoder cmd for local preview of *files* ───────────────────
     def _dec_cmd_preview_file(self) -> list[str]:
-        return [
-            "ffmpeg", "-v", "warning", "-fflags", "nobuffer", "-flags", "low_delay",
-            "-err_detect", "ignore_err+crccheck", "-i", self.a.video,
-            "-vf", "format=rgba", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1",
-        ]
+        return ["ffmpeg", "-v", "warning", "-fflags", "nobuffer", "-flags", "low_delay",
+                "-err_detect", "ignore_err+crccheck", "-i", self.a.video,
+                "-vf", "format=rgba", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1"]
 
-    # ───── public run() ─────────────────────────────────────────────────
+    # ───── public run() ───────────────────────────────────────────────
     def run(self) -> None:
         a = self.a
         src = self.dshow_arg or os.path.basename(a.video)
@@ -305,9 +360,9 @@ class StreamSender(_FFmpegMixin):
         enc = self._spawn(self._enc_cmd(), "ffmpeg:enc")
         time.sleep(0.5)
 
-        # automatic retry without explicit pixel-format if dshow choked
         if enc.poll() is not None and self.dshow_arg and a.cam_pixfmt:
-            logging.warning("capture failed with pixel-format \"%s\" — retrying without it", a.cam_pixfmt)
+            logging.warning("capture failed with pixel-format \"%s\" — retrying without it",
+                            a.cam_pixfmt)
             enc = self._spawn(self._enc_cmd(retry_without_pixfmt=True), "ffmpeg:enc")
 
         dec: Optional[subprocess.Popen] = None
@@ -316,21 +371,19 @@ class StreamSender(_FFmpegMixin):
                 enc.wait()
             else:
                 if self.dshow_arg:
-                    time.sleep(0.5)   # let packets arrive
+                    time.sleep(0.5)  # let packets arrive
                     dec = self._spawn(
-                        [
-                            "ffmpeg", "-v", "warning", "-fflags", "nobuffer", "-flags", "low_delay",
-                            "-i", self._udp_url(a.url),
-                            "-vf", "format=rgba", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1",
-                        ],
-                        "ffmpeg:preview",
-                        capture_out=True,
-                    )
+                        ["ffmpeg", "-v", "warning", "-fflags", "nobuffer", "-flags", "low_delay",
+                         "-i", self._udp_url(a.url),
+                         "-vf", "format=rgba", "-f", "rawvideo",
+                         "-pix_fmt", "rgba", "pipe:1"],
+                        "ffmpeg:preview", capture_out=True)
                 else:
-                    dec = self._spawn(self._dec_cmd_preview_file(), "ffmpeg:dec", capture_out=True)
+                    dec = self._spawn(self._dec_cmd_preview_file(),
+                                      "ffmpeg:dec", capture_out=True)
 
-                preview_loop(dec, self.width, self.height,
-                             a.depth_loc, a.depthiness, a.focus, a.diag)
+                preview_loop(dec, self.width, self.height, a.depth_loc,
+                             a.depthiness, a.focus, a.diag)
 
         except KeyboardInterrupt:
             logging.info("Ctrl-C — stopping sender")
@@ -344,66 +397,4 @@ class StreamSender(_FFmpegMixin):
                         p.kill()
 
 
-# ════════════════════════════════════════════════════════════════════
-#                         StreamReceiver
-# ════════════════════════════════════════════════════════════════════
-class StreamReceiver(_FFmpegMixin):
-    def __init__(self, args):
-        self.a = args
-
-    def _dec_cmd(self) -> list[str]:
-        return [
-            "ffmpeg", "-v", "warning", "-fflags", "nobuffer", "-flags", "low_delay",
-            "-err_detect", "ignore_err+crccheck", "-i", self._udp_url(self.a.url),
-            "-vf", "format=rgba", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1",
-        ]
-
-    def run(self) -> None:
-        backoff = 1
-        while True:
-            dec: Optional[subprocess.Popen] = None
-            try:
-                # ── detect resolution ──────────────────────────────────
-                if self.a.width and self.a.height:
-                    w, h = self.a.width, self.a.height
-                else:
-                    probe = self._probe_ffprobe(
-                        [
-                            "ffprobe", "-v", "error", "-select_streams", "v:0",
-                            "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0",
-                            self._udp_url(self.a.url),
-                        ],
-                        timeout=self.a.wait,
-                    ) or (640, 360)
-                    w, h = probe
-                logging.info("stream resolution %dx%d", w, h)
-
-                # ── start decoder ───────────────────────────────────────
-                dec = self._spawn(self._dec_cmd(), "ffmpeg:dec", capture_out=True)
-                time.sleep(0.5)
-                if dec.poll() is not None:
-                    raise RuntimeError(f"decoder quit instantly (code {dec.returncode})")
-
-                logging.info("◀ receiving %dx%d from %s", w, h, self.a.url)
-                preview_loop(
-                    dec, w, h,
-                    self.a.depth_loc, self.a.depthiness,
-                    self.a.focus, self.a.diag,
-                )
-
-            except KeyboardInterrupt:
-                logging.info("interrupted — leaving receiver")
-                break
-            except Exception as exc:
-                logging.error("recv error: %s", exc)
-                logging.info("retrying in %d s", backoff)
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 30)
-            finally:
-                if dec and dec.poll() is None:
-                    dec.terminate()
-                    try:
-                        dec.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        dec.kill()
-                backoff = 1
+__all__ = ["StreamSender", "StreamReceiver"]
