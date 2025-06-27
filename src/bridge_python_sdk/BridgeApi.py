@@ -13,7 +13,7 @@ from ctypes import (
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import importlib.resources as ir
-
+import subprocess
 from BridgeDataTypes import Window, PixelFormats, LKGCalibration, DefaultQuiltSettings
 
 _MIN_BRIDGE_VERSION = "2.6.0"
@@ -107,6 +107,8 @@ class BridgeAPI:
     def __init__(self, debug: bool = True, library_path: Optional[str] = None,
                  requested_version: str = _BRIDGE_VERSION):
 
+        import subprocess, ctypes.util
+
         self.debug = bool(debug)
 
         def _log(msg: str):
@@ -116,29 +118,26 @@ class BridgeAPI:
         self._log = _log
         self._log(f"Requested Bridge version: {requested_version}")
 
+        # ---------------- locate Bridge install -----------------
         if library_path is None:
             install_dir = _bridge_install_location(
                 requested_version,
                 self._log if self.debug else (lambda *_: None)
             )
-
-            # ---------- fallback to packaged binaries ----------
             if install_dir is None:
                 pkg_root = ir.files("bridge_python_sdk") / "bin"
                 if sys.platform.startswith("win"):
-                    subdir = "win";            lib_name = "bridge_inproc.dll"
+                    subdir = "win";                      lib_name = "bridge_inproc.dll"
                 elif sys.platform == "darwin":
                     subdir = "mac-m1" if platform.machine().lower() in ("arm64", "aarch64") else "mac-x64"
                     lib_name = "libbridge_inproc.dylib"
                 else:
-                    subdir = "ubuntu";         lib_name = "libbridge_inproc.so"
+                    subdir = "ubuntu";                   lib_name = "libbridge_inproc.so"
                 install_dir = pkg_root / subdir
                 library_path = str(install_dir / lib_name)
                 if sys.platform.startswith("win"):
                     ctypes.windll.kernel32.SetDllDirectoryW(str(install_dir))
                 self._log(f"Using bundled Bridge binary: {library_path}")
-
-            # ---------- use system install ----------
             else:
                 self._log(f"Found installed Bridge {requested_version} at {install_dir}")
                 if sys.platform.startswith("win"):
@@ -148,18 +147,58 @@ class BridgeAPI:
                     library_path = str(install_dir / "libbridge_inproc.dylib")
                 else:
                     library_path = str(install_dir / "libbridge_inproc.so")
+        else:
+            install_dir = Path(library_path).parent
 
-        # -------- load the shared library ----------
+        # -------- Linux: preload hard dependencies -----------------------
+        if sys.platform.startswith("linux"):
+            # Make TLS and AppIndicator symbols globally visible
+            deepbind_flag = getattr(ctypes, "RTLD_DEEPBIND", 0)
+            global_mode   = ctypes.RTLD_GLOBAL | deepbind_flag
+
+            # TLS chain (order matters)
+            for dep in ("libmbedcrypto.so.1",
+                        "libmbedx509.so.0",
+                        "libmbedtls.so.10"):
+                p = install_dir / dep
+                if p.is_file():
+                    ctypes.CDLL(str(p), mode=global_mode)
+                    self._log(f"Pre-loaded {p.name}")
+
+            # AppIndicator variants found on different Ubuntu flavours
+            for cand in ("libappindicator3.so.1",
+                         "libappindicator3.so",
+                         "libappindicator.so.1",
+                         "libappindicator.so",
+                         "libayatana-appindicator3.so.1",
+                         "libayatana-appindicator3.so"):
+                lib = ctypes.util.find_library(Path(cand).stem) or cand
+                try:
+                    ctypes.CDLL(lib, mode=global_mode)
+                    self._log(f"Pre-loaded {Path(lib).name}")
+                    break
+                except OSError:
+                    continue  # try next candidate
+
+        # -------- finally load Bridge itself -----------------------------
         try:
             self.lib = (ctypes.WinDLL(library_path, use_last_error=True)
                         if sys.platform.startswith("win")
                         else ctypes.CDLL(library_path))
         except OSError as e:
             self._log(f"Failed to load '{library_path}': {e}")
+            self._log(f"LD_LIBRARY_PATH: {os.getenv('LD_LIBRARY_PATH')}")
+            try:
+                out = subprocess.check_output(["ldd", library_path],
+                                              text=True, stderr=subprocess.STDOUT)
+                self._log(f"ldd output for {library_path}:\n{out}")
+            except Exception as e2:
+                self._log(f"ldd diagnostic failed: {e2}")
             raise
 
         self._log(f"Successfully loaded {library_path}")
         self._bind_functions()
+
 
     # ------------- bind native exports ---------------------------------
     def _bind_functions(self) -> None:
