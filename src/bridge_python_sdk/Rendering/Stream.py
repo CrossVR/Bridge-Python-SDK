@@ -87,18 +87,53 @@ class _FFmpegMixin:
     # ── generic width×height probe ────────────────────────────────────
     @classmethod
     def _probe_ffprobe(cls, cmd: Sequence[str],
-                       timeout: float | None) -> Optional[tuple[int, int]]:
+                       timeout: float | None = 10) -> Optional[tuple[int, int]]:
+        logging.info("using ffprobe to get stream size")
+        logging.debug(cmd)
+
+        # build a probe-specific command with much smaller fifo and a demuxer timeout
+        cmd2: list[str] = []
+        for token in cmd:
+            if token.startswith("udp://"):
+                p = urlparse(token)
+                if p.scheme in ("udp", "prompeg+udp"):
+                    q = dict(parse_qsl(p.query))
+                    q["fifo_size"]        = str(100_000)
+                    q.setdefault("overrun_nonfatal", "1")
+                    q.setdefault("timeout", "500000")
+                    token = urlunparse(p._replace(query=urlencode(q)))
+            cmd2.append(token)
+
+        # also limit how much ffprobe analyzes before giving up
+        if cmd2 and cmd2[0] == "ffprobe":
+            cmd2.insert(1, "-probesize"); cmd2.insert(2, "32M")
+            cmd2.insert(3, "-analyzeduration"); cmd2.insert(4, "1M")
+
+        proc = subprocess.Popen(
+            cmd2,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
         try:
-            out = subprocess.check_output(cmd, text=True,
-                                          timeout=timeout).strip()
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            out, _ = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            logging.info("failed (timeout)")
+            proc.kill()
             return None
+
+        if proc.returncode != 0:
+            logging.info("failed")
+            return None
+
         for ln in out.splitlines():
             m = cls._RE_WXH.search(ln)
             if m:
                 w, h = int(m[1]), int(m[2])
                 if not w & 1 and w >= cls._MIN_DIM and h >= cls._MIN_DIM:
+                    logging.info("succeeded")
                     return w, h
+
         return None
 
 
@@ -182,6 +217,7 @@ class StreamReceiver(_FFmpegMixin):
     _AUDIO_PORT = 54002  # localhost port for tee’d audio
 
     def __init__(self, args):
+        logging.info("Stream Receiver created")
         self.a = args
 
     # ───── ffmpeg demux/tee: raw RGBA to stdout, audio to local UDP ───
@@ -220,7 +256,7 @@ class StreamReceiver(_FFmpegMixin):
                             "ffprobe", "-v", "error", "-select_streams", "v:0",
                             "-show_entries", "stream=width,height",
                             "-of", "csv=s=x:p=0",
-                            self._udp_url(self.a.url),
+                            self.a.url,
                         ],
                         timeout=self.a.wait,
                     ) or (640, 360)
@@ -265,6 +301,7 @@ class StreamReceiver(_FFmpegMixin):
 # ════════════════════════════════════════════════════════════════════
 class StreamSender(_FFmpegMixin):
     def __init__(self, args):
+        logging.info("Stream Sender created")
         self.a = args
         if args.camera:
             self.dshow_arg = self._resolve_camera_arg(args.camera)
