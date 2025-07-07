@@ -88,11 +88,25 @@ def main() -> None:
         data = np.array(image, dtype=np.uint8)
         h, w, _ = data.shape
 
-    # Initialize GLFW and hidden GL context
+    gl_major = 4
+    gl_minor = 3
+    core_profile = True
+
+    if sys.platform == "darwin":
+        if (gl_major, gl_minor) > (4, 1):
+            gl_major, gl_minor = 4, 1
+
     if not glfw.init():
-        print("Error: failed to initialize GLFW", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError("Failed to initialize GLFW")
+
+    glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, gl_major)
+    glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, gl_minor)
+    if core_profile:
+        glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+    if sys.platform == "darwin":
+        glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+    
     dummy = glfw.create_window(1, 1, "", None, None)
     if not dummy:
         print("Error: failed to create hidden GLFW window", file=sys.stderr)

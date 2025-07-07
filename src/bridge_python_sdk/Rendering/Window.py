@@ -8,20 +8,18 @@ from typing import Callable, Optional, Tuple
 class Window:
     def __init__(self, width: int, height: int, title: str,
                  gl_major: int = 4, gl_minor: int = 6, core_profile: bool = True):
-        # --- macOS compatibility: force maximum supported context (4.1) ---
         if sys.platform == "darwin":
             if (gl_major, gl_minor) > (4, 1):
                 gl_major, gl_minor = 4, 1
-            core_profile = True  # macOS requires core profile
-        # -------------------------------------------------------------------
 
         if not glfw.init():
             raise RuntimeError("Failed to initialize GLFW")
 
         glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, gl_major)
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, gl_minor)
-        if core_profile or sys.platform == "darwin":
+        if core_profile:
             glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+        if sys.platform == "darwin":
             glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
 
         glfw.window_hint(glfw.DOUBLEBUFFER, glfw.TRUE)
@@ -35,6 +33,10 @@ class Window:
 
         glfw.make_context_current(self._window)
         glfw.swap_interval(1)  # Enable v-sync by default
+
+        # Print context info for verification
+        print("OpenGL :", glGetString(GL_VERSION).decode())
+        print("GLSL   :", glGetString(GL_SHADING_LANGUAGE_VERSION).decode())
 
         # Track framebuffer resize
         def _resize_callback(window, w, h):
