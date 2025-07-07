@@ -4,6 +4,12 @@
 # Extra diagnostics are printed to stderr when BridgeAPI(debug=True).
 # --------------------------------------------------------------
 
+# BridgeApi.py
+# --------------------------------------------------------------
+# Loads Looking-Glass Bridge ≥2.6 automatically
+# Extra diagnostics are printed to stderr when BridgeAPI(debug=True).
+# --------------------------------------------------------------
+
 import json, os, re, sys, ctypes, platform
 from ctypes import (
     c_bool, c_char_p, c_float, c_int32, c_int64,
@@ -81,6 +87,35 @@ def _last_error() -> int:
         return ctypes.get_last_error()
     return ctypes.get_errno()
 
+# ---------- telemetry helper -----------------------------------
+def _apply_tracking_setting(disable: bool, log) -> None:
+    """
+    Ensure the Bridge settings.json reflects the user's telemetry preference.
+    When *disable* is True, the value is written as "false", otherwise "true".
+    """
+    try:
+        p = _settings_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+
+        new_val = "false" if disable else "true"
+        data: Dict[str, Any] = {}
+
+        if p.is_file():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception as e:
+                log(f"Failed to parse existing settings.json: {e}")
+
+        if not isinstance(data, dict):
+            data = {}
+
+        if data.get("enable_utilization_telemetry") != new_val:
+            data["enable_utilization_telemetry"] = new_val
+            p.write_text(json.dumps(data, indent=4), encoding="utf-8")
+            log(f'Set "enable_utilization_telemetry" → {new_val} in {p}')
+    except Exception as e:
+        log(f"Unable to update telemetry setting: {e}")
+
 # ----------------------------------------------------------------- BridgeAPI
 class BridgeAPI:
     # ------------- private utility -------------------------------------
@@ -105,7 +140,7 @@ class BridgeAPI:
 
     # ------------- ctor -------------------------------------------------
     def __init__(self, debug: bool = True, library_path: Optional[str] = None,
-                 requested_version: str = _BRIDGE_VERSION):
+                 requested_version: str = _BRIDGE_VERSION, disableTracking: bool = False):
 
         import ctypes.util
 
@@ -117,6 +152,9 @@ class BridgeAPI:
 
         self._log = _log
         self._log(f"Requested Bridge version: {requested_version}")
+
+        # ----------- apply telemetry preference -------------------------
+        _apply_tracking_setting(disableTracking, self._log)
 
         # ---------------- locate Bridge install -----------------
         if library_path is None:
