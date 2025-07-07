@@ -145,28 +145,73 @@ def _norm_focus(f: float, d: float) -> float:
     return a + (((f * d) + 1) / 2) * (b - a)
 
 
-def preview_loop(proc: subprocess.Popen, w: int, h: int, depth_loc: int,
-                 depth_scale: float, focus: float, diag: bool) -> None:
+def _check_gl_error(label: str = "") -> None:
+    err = GL.glGetError()
+    if err != GL.GL_NO_ERROR:
+        msg = GLU.gluErrorString(err)
+        text = msg.decode() if msg not in (None, b'') else f"0x{err:04X}"
+        raise RuntimeError(f"OpenGL error {text} at {label}")
+
+
+def preview_loop(proc: subprocess.Popen,
+                 w: int,
+                 h: int,
+                 depth_loc: int,
+                 depth_scale: float,
+                 focus: float,
+                 diag: bool) -> None:
+
+    gl_major = 4
+    gl_minor = 3
+    core_profile = True
+
+    if sys.platform == "darwin":
+        if (gl_major, gl_minor) > (4, 1):
+            gl_major, gl_minor = 4, 1
+
     if not glfw.init():
-        sys.exit("GLFW init failed")
+        raise RuntimeError("Failed to initialize GLFW")
+
+    glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, gl_major)
+    glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, gl_minor)
+    if core_profile:
+        glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+    if sys.platform == "darwin":
+        glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
 
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
     win = glfw.create_window(1, 1, "", None, None)
     glfw.make_context_current(win)
+    _check_gl_error("make_context_current")
 
-    bridge = BridgeAPI(); bridge.initialize("RGBD")
+    bridge = BridgeAPI()
+    bridge.initialize("RGBD")
     handle = bridge.instance_window_gl(-1)
     asp, qw, qh, tx, ty = bridge.get_default_quilt_settings(handle)
 
     tex = GL.glGenTextures(1)
+    _check_gl_error("glGenTextures")
+
     GL.glBindTexture(GL.GL_TEXTURE_2D, tex)
+    _check_gl_error("glBindTexture")
+
     GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
+    _check_gl_error("glPixelStorei")
+
     GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
+    _check_gl_error("glTexParameteri MIN_FILTER")
+
     GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+    _check_gl_error("glTexParameteri MAG_FILTER")
+
     GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, w, h, 0,
                     GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, None)
+    _check_gl_error("glTexImage2D")
 
-    frame_bytes, buf, frames, t0 = w * h * 4, bytearray(), 0, time.time()
+    frame_bytes = w * h * 4
+    buf = bytearray()
+    frames = 0
+    t0 = time.time()
     f_norm = _norm_focus(focus, depth_scale)
 
     while not glfw.window_should_close(win):
@@ -179,7 +224,9 @@ def preview_loop(proc: subprocess.Popen, w: int, h: int, depth_loc: int,
         if len(buf) < frame_bytes:
             break
 
-        raw = bytes(buf[:frame_bytes]); del buf[:frame_bytes]
+        raw = bytes(buf[:frame_bytes])
+        del buf[:frame_bytes]
+
         try:
             rgba = np.frombuffer(raw, dtype=np.uint8).reshape((h, w, 4))
         except ValueError:
@@ -187,27 +234,37 @@ def preview_loop(proc: subprocess.Popen, w: int, h: int, depth_loc: int,
             continue
 
         GL.glBindTexture(GL.GL_TEXTURE_2D, tex)
+        _check_gl_error("glBindTexture (frame upload)")
+
         GL.glTexSubImage2D(GL.GL_TEXTURE_2D, 0, 0, 0, w, h,
                            GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, rgba)
+        _check_gl_error("glTexSubImage2D")
 
         bridge.draw_interop_rgbd_texture_gl(
             handle, tex, PixelFormats.RGBA,
             w, h, qw, qh, tx, ty,
             float(asp), f_norm, depth_scale, 1.0, depth_loc,
         )
+        _check_gl_error("bridge.draw_interop_rgbd_texture_gl")
 
-        glfw.swap_buffers(win); glfw.poll_events()
+        glfw.swap_buffers(win)
+        glfw.poll_events()
+        _check_gl_error("swap_buffers")
 
         frames += 1
         if time.time() - t0 >= 1:
             logging.info("FPS %d", frames)
             if diag:
                 logging.debug("RGBA[0,0]=%s", tuple(rgba[0, 0]))
-            frames, t0 = 0, time.time()
+            frames = 0
+            t0 = time.time()
 
-    GL.glDeleteTextures(1, [tex]); glfw.destroy_window(win); glfw.terminate()
+    GL.glDeleteTextures(1, [tex])
+    _check_gl_error("glDeleteTextures")
 
-
+    glfw.destroy_window(win)
+    glfw.terminate()
+    
 # ════════════════════════════════════════════════════════════════════
 #                         StreamReceiver
 # ════════════════════════════════════════════════════════════════════
