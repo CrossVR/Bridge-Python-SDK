@@ -24,7 +24,6 @@ class Window:
             glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
             glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
 
-        glfw.window_hint(glfw.SAMPLES, 4)            # 4× MSAA
         glfw.window_hint(glfw.DOUBLEBUFFER, glfw.TRUE)
 
         self._width = width

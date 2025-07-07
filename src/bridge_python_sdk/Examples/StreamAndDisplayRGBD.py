@@ -10,7 +10,7 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, ROOT)
 
-from Rendering.Stream import StreamSender, StreamReceiver        # noqa: E402
+from Rendering.Stream import StreamSender, StreamReceiver
 
 
 def main() -> None:
