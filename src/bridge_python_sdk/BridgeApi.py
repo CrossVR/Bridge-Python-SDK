@@ -1,6 +1,6 @@
 # BridgeApi.py
 # --------------------------------------------------------------
-# Loads Looking-Glass Bridge 2.6.x automatically
+# Loads Looking-Glass Bridge ≥2.6 automatically
 # Extra diagnostics are printed to stderr when BridgeAPI(debug=True).
 # --------------------------------------------------------------
 
@@ -17,7 +17,7 @@ import subprocess
 from BridgeDataTypes import Window, PixelFormats, LKGCalibration, DefaultQuiltSettings
 
 _MIN_BRIDGE_VERSION = "2.6.0"
-_BRIDGE_VERSION     = "2.6.0"
+_BRIDGE_VERSION     = "2.6.2"
 
 # ----------------------------------------------------------------- helpers
 def _ver_tuple(v: str) -> Tuple[int, ...]:
@@ -107,7 +107,7 @@ class BridgeAPI:
     def __init__(self, debug: bool = True, library_path: Optional[str] = None,
                  requested_version: str = _BRIDGE_VERSION):
 
-        import subprocess, ctypes.util
+        import ctypes.util
 
         self.debug = bool(debug)
 
@@ -148,7 +148,51 @@ class BridgeAPI:
                 else:
                     library_path = str(install_dir / "libbridge_inproc.so")
         else:
-            install_dir = Path(library_path).parent
+            # ---- user supplied a path ----
+            supplied = Path(library_path)
+            if supplied.is_dir():
+                # try to locate the binary inside the directory
+                self._log(f"'library_path' points to a directory: {supplied}")
+                suffix = { "win32": ".dll", "cygwin": ".dll",
+                           "msys":  ".dll",
+                           "darwin": ".dylib" }.get(sys.platform, ".so")
+                candidates = sorted(supplied.glob(f"bridge_inproc*{suffix}"))
+                if not candidates:
+                    self._log(f"No bridge_inproc*{suffix} candidate found in {supplied}")
+                    raise FileNotFoundError(
+                        f"No Bridge binary found in directory: {supplied}"
+                    )
+                if len(candidates) > 1:
+                    self._log(f"Multiple candidates found: {candidates}; choosing first.")
+                library_path = str(candidates[0])
+                install_dir  = supplied
+                if sys.platform.startswith("win"):
+                    ctypes.windll.kernel32.SetDllDirectoryW(str(install_dir))
+                self._log(f"Using Bridge binary: {library_path}")
+            else:
+                library_path = str(supplied)
+                install_dir  = supplied.parent
+                if sys.platform.startswith("win"):
+                    ctypes.windll.kernel32.SetDllDirectoryW(str(install_dir))
+
+        # --- verify DLL presence and show directory listing --------------
+        lib_path_obj = Path(library_path)
+        dll_exists = lib_path_obj.is_file()
+        self._log(f"Resolved library path: {library_path}")
+        self._log(f"Library exists on disk: {dll_exists}")
+        if not dll_exists:
+            try:
+                contents = [p.name for p in install_dir.glob('bridge_inproc*')]
+                self._log(f"Directory listing for {install_dir}: {contents or 'None'}")
+            except Exception as e:
+                self._log(f"Unable to list contents of {install_dir}: {e}")
+            raise FileNotFoundError(f"Bridge binary not found: {library_path}")
+        else:
+            try:
+                st = lib_path_obj.stat()
+                self._log(f"Library size: {st.st_size} bytes, mtime: {st.st_mtime}")
+            except Exception as e:
+                self._log(f"Could not stat library: {e}")
 
         # -------- Linux: preload hard dependencies -----------------------
         if sys.platform.startswith("linux"):
@@ -188,17 +232,35 @@ class BridgeAPI:
         except OSError as e:
             self._log(f"Failed to load '{library_path}': {e}")
             self._log(f"LD_LIBRARY_PATH: {os.getenv('LD_LIBRARY_PATH')}")
-            try:
-                out = subprocess.check_output(["ldd", library_path],
-                                              text=True, stderr=subprocess.STDOUT)
-                self._log(f"ldd output for {library_path}:\n{out}")
-            except Exception as e2:
-                self._log(f"ldd diagnostic failed: {e2}")
+            if sys.platform.startswith("win"):
+                err_code = ctypes.get_last_error()
+                if err_code:
+                    buf = ctypes.create_unicode_buffer(1024)
+                    ctypes.windll.kernel32.FormatMessageW(
+                        0x00001000, None, err_code, 0, buf, len(buf), None)
+                    self._log(f"Win32 last-error {err_code}: {buf.value.strip()}")
+                try:
+                    subprocess.check_output(
+                        ["dumpbin", "/DEPENDENTS", library_path],
+                        text=True, stderr=subprocess.STDOUT
+                    )
+                except FileNotFoundError:
+                    self._log("dumpbin not found on PATH")
+                except subprocess.CalledProcessError as e3:
+                    self._log(f"dumpbin /DEPENDENTS failed: {e3.output.strip()}")
+            else:
+                try:
+                    out = subprocess.check_output(["ldd", library_path],
+                                                  text=True, stderr=subprocess.STDOUT)
+                    self._log(f"ldd output for {library_path}:\n{out}")
+                except FileNotFoundError:
+                    self._log("ldd not found on PATH")
+                except subprocess.CalledProcessError as e2:
+                    self._log(f"ldd failed: {e2.output.strip()}")
             raise
 
         self._log(f"Successfully loaded {library_path}")
         self._bind_functions()
-
 
     # ------------- bind native exports ---------------------------------
     def _bind_functions(self) -> None:
