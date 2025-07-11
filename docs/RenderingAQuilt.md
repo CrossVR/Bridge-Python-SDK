@@ -1,19 +1,30 @@
-import math
-import time
-import sys
-import os
+# Rendering a Quilt
 
-# Add the parent directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+This tutorial is intended to follow the [Getting Started](./GettingStarted.md) tutorial, but it may be helpful to work through one of the `Setting Up To Render` tutorials, either [Displaying a Prerendered Quilt](./DisplayingQuilt.md) or [Displaying a Prerendered RGBD](./DisplayingRGBD.md). These tutorials are simpler and focus on ONLY the bridge api calls needed to render. This tutorial will be focused mostly on the camera and rendering system needed to render a quilt.
 
-import ctypes
-import numpy as np
-from OpenGL import GL
-import glfw
-from typing import Optional, Dict, Any, List, Tuple
+## Overview
 
-from BridgeApi import BridgeAPI, PixelFormats
+A looking glass display projects many different views of a scene into the space in front of it, allowing you to move and look around objects shown in the display. This means we need to deliver a set of views to the display to be shown. The main way that we achieve this is using a grid of views stored in a single image which we call a [quilt](https://docs.lookingglassfactory.com/keyconcepts/quilts).
 
+This tutorial will contain a bit of boilerplate as we need some infrastructure for rendering, we will have: a `Mesh` class, a `Shader` class, a `Renderer` class, plus the `main` function which ties it all together.
+
+The magic all happens in the `LKGCamera` class and the `Renderer.render_quilt` class.
+
+## Rendering Boilerplate
+
+If you are familiar with opengl this will be pretty self-explanatory but I will go into enough detail that it should be possible to still follow along even if your opengl is a bit rusty.
+
+If you want a more detailed opengl tutorial I prefer [LearnOpenGL.com](https://learnopengl.com/Introduction) for a written tutorial or if you would rather have a video tutorial [The Cherno](https://www.youtube.com/playlist?list=PLlrATfBNZ98foTJPJ_Ev03o2oq3-GGOS2) on youtube has a good, albeit old, tutorial.
+
+### Mesh Class
+
+The first thing we need is some sort of 3D geometry to render, the Mesh class below contains a hardcoded cube mesh, which we will render to the scene.
+
+You can also see a more fully functional Mesh class [here](../src/bridge_python_sdk/Rendering/Mesh.py).
+
+More info about meshes in opengl [here](https://learnopengl.com/Getting-started/Hello-Triangle).
+
+```python
 class Mesh:
     # This is storage for the raw mesh data for a cube. 
     # There are many ways to store mesh data and this is the most simple,
@@ -114,7 +125,23 @@ class Mesh:
             GL.glDeleteVertexArrays(1, [self.vao])
         except Exception:
             pass
+```
 
+### Shader Class
+
+Ok, we have some geometry that we want to render, but now we need to give the gpu a program to use to render this geometry. We call this GPU program a "shader". 
+
+The most basic complete shader in opengl requires a vertex shader and a fragment shader. 
+
+Essentially the vertex shader lets you operate on every vertex in a triangle in your Mesh. This is where you will do the math to transform a mesh into the correct screen space coordinates for rendering, this determines where the triangles go on screen.
+
+After the vertex shader is used to place the triangles of the mesh on screen in the correct locations, the fragment shader is run per pixel on the output triangles from the vertex shader. Basically the fragment shader computes the color to render to the screen for that particular point on that particular triangle.
+
+You can see a more fully fleshed out Shader class [here](../src/bridge_python_sdk/Rendering/Shader.py).
+
+For more info about shaders see [here](https://learnopengl.com/Getting-started/Shaders).
+
+```python
 class Shader:
     # This is a very basic vertex shader
     # It uses the u_mvp matrix to transform the vertices into the correct 
@@ -199,7 +226,25 @@ class Shader:
     # This is how we activate this shader, we will use it in the next class 
     def use(self):
         GL.glUseProgram(self.id)
+```
 
+### Renderer
+
+Ok, most of this last class is boilerplate but specifically the `render_quilt` function is where the fun begins. 
+
+The boilerplate in the renderer class does all the heavy lifting of creating the 2D window, initializing bridge, creating the bridge window, managing rendering meshes to the 2d window.  
+
+To generate the quilt, the `render_quilt` function tells opengl to only draw to a small portion of the quilt framebuffer, renders the correct view to that location, and then repeats until every view is completely drawn, then it uses the same function we used in the [Displaying a Prerendered Quilt](./DisplayingQuilt.md) tutorial (`bridge.draw_interop_quilt_texture_gl`) to draw the quilt to the looking glass display.
+
+#### NOTE: I will be skipping over the details of the LKGCamera as we will discuss it in detail in a later section.
+
+You can also see a more fully featured Renderer class [here](../src/bridge_python_sdk/Rendering/Render.py).
+
+The quilt is rendered using an offscreen framebuffer, you can learn more about it [here](https://learnopengl.com/Advanced-OpenGL/Framebuffers).
+
+To learn more about windowing see [here](https://learnopengl.com/Getting-started/Hello-Window).
+
+```python
 class Render:
     def __init__(
         self,
@@ -536,7 +581,69 @@ class Render:
             self.close()
         except Exception:
             pass
+```
 
+### Main 
+
+Right now we just have a bunch of classes that setup infrastructure, this is how we use those classes to render.
+
+```python
+def main() -> None:
+    # Create a renderer, a mesh, and a shader
+    # We have to create the renderer first because it sets up opengl
+    renderer = Render()
+    mesh   = Mesh()
+    shader = Shader()
+
+    # Add the mesh and shader to the renderer as an object
+    handle = renderer.add_object(mesh, shader)
+
+    # variables to keep track of the cube rotation
+    rx = ry = rz = 0.0
+    auto_rx, auto_ry, auto_rz = 0.07, 0.1, 0.09
+
+    last_time = time.time()
+
+    # while the 2d window is open
+    while not glfw.window_should_close(renderer._window):
+        # update the rotation of the mesh to make the example more interesting
+        now = time.time()
+        dt = now - last_time
+        last_time = now
+
+        rx += auto_rx * dt
+        ry += auto_ry * dt
+        rz += auto_rz * dt
+
+        # update the model matrix based on the rotations
+        renderer._objects[handle]["model"] = Mesh.euler_xyz(rx, ry, rz)
+        
+        # render a frame!
+        renderer.render_frame(dt)
+
+# this is some python boiler plate to ensure we only run the 
+# main function when this file is executed instead of any time this file is referenced
+if __name__ == "__main__":
+    main()
+```
+
+## Creating a Physically Accurate Volumetric Render | LKGCamera
+
+Ok, finally we can talk about the real interesting stuff. The looking glass display outputs many views of a scene all at once, and we need to ensure that the views its outputting form together to create a cohesive volumetric image. 
+
+The key moment for me that helped me understand how the camera works was looking at how real world capture is done for the looking glass displays. We use a linear camera rail to move a camera left to right, with the subject centered on the camera movement. 
+
+You can see an example of this type of capture [here](https://blocks.glass/staff/3410).
+
+Often people assume that the camera movement should be an orbit around an object but this is incorrect.
+
+The camera rail creates a decent looking hologram, but has a flaw that we can correct for when we are creating a virtual camera for rendering.
+
+You can read more about the camera setup [here](https://docs.lookingglassfactory.com/keyconcepts/camera).
+
+It is also probably helpful to read up about how standard opengl camera math works. You can find a math overview [here](https://learnopengl.com/Getting-started/Transformations), and more info about cameras [here](https://learnopengl.com/Getting-started/Camera).
+
+```python
 class LKGCamera:
     def __init__(
         self,
@@ -649,41 +756,6 @@ class LKGCamera:
         m[2, 3] = (2 * fp * n) / (n - fp)
         m[3, 2] = -1.0
         return m
+```
 
-def main() -> None:
-    # Create a renderer, a mesh, and a shader
-    # We have to create the renderer first because it sets up opengl
-    renderer = Render()
-    mesh   = Mesh()
-    shader = Shader()
-
-    # Add the mesh and shader to the renderer as an object
-    handle = renderer.add_object(mesh, shader)
-
-    # variables to keep track of the cube rotation
-    rx = ry = rz = 0.0
-    auto_rx, auto_ry, auto_rz = 0.07, 0.1, 0.09
-
-    last_time = time.time()
-
-    # while the 2d window is open
-    while not glfw.window_should_close(renderer._window):
-        # update the rotation of the mesh to make the example more interesting
-        now = time.time()
-        dt = now - last_time
-        last_time = now
-
-        rx += auto_rx * dt
-        ry += auto_ry * dt
-        rz += auto_rz * dt
-
-        # update the model matrix based on the rotations
-        renderer._objects[handle]["model"] = Mesh.euler_xyz(rx, ry, rz)
-        
-        # render a frame!
-        renderer.render_frame(dt)
-
-# this is some python boiler plate to ensure we only run the 
-# main function when this file is executed instead of any time this file is referenced
-if __name__ == "__main__":
-    main()
+After all that you should have a python file that looks something like [this.](../src/bridge_python_sdk/Examples/MinimalCube.py)

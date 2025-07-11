@@ -12,7 +12,6 @@ Integrate your existing Python-based 3D workflow with any Looking Glass display 
 
 ## Installation
 
-
 Setup a virtual environment:
 
 ```bash
@@ -63,6 +62,15 @@ On Linux you must run under **X11**; Wayland is not yet supported.
 ## Quick Start
 
 See `src/bridge_python_sdk/Examples` for fully-worked programmes that spin a cube and orbit a solar system.
+
+## Tutorials
+
+We have a few tutorials in the 'docs' folder, namely:
+
+* [Getting Started](./docs/GettingStarted.md) | Covers setting up a python environment and installing the sdk
+* [Displaying a Prerendered Quilt](./docs/DisplayingQuilt.md) | Covers reading a quilt image from a file and displaying it
+* [Displaying a Prerendered RGBD](./docs/DisplayingRGBD.md) | Covers reading an RGBD image from a file and displaying it
+* [Rendering a Quilt](./docs/RenderingAQuilt.md) | Covers rendering a quilt in real time and displaying it
 
 ## Prerequisites
 
