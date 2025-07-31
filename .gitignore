@@ -5,3 +5,5 @@ src/bridge_python_sdk/__pycache__/*
 dist/*
 assets/*
 site/*
+src/bridge_python_sdk/Examples/out/*
+imgui.ini

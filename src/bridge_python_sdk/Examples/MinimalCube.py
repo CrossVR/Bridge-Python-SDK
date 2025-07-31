@@ -123,11 +123,11 @@ class Shader:
     #version 330 core
     layout(location = 0) in vec3 aPos;
     uniform mat4 u_mvp;
-    out vec2 vUV;
+    out vec3 vPos;
     void main()
     {
-        gl_Position = u_mvp * vec4(aPos,1.0);
-        vUV = aPos.xz * 0.5 + 0.5;
+        gl_Position = u_mvp * vec4(aPos, 1.0);
+        vPos = aPos;
     }
     """
 
@@ -136,12 +136,27 @@ class Shader:
     # color the cube something
     DEFAULT_FRAGMENT_SRC = """
     #version 330 core
-    in vec2 vUV;
+    in vec3 vPos;
     out vec4 FragColor;
     void main()
     {
-        vec3 col = vec3(vUV, 1.0 - vUV.x);
-        FragColor = vec4(col,1.0);
+        vec3 N = normalize(cross(dFdx(vPos), dFdy(vPos)));
+        vec3 aN = abs(N);
+        vec2 uv;
+        if (aN.z >= aN.x && aN.z >= aN.y)
+            uv = vPos.xy + 0.5;
+        else if (aN.x >= aN.y)
+            uv = vec2(vPos.z, vPos.y) + 0.5;
+        else
+            uv = vec2(vPos.x, vPos.z) + 0.5;
+
+        float range = 0.02;
+        vec3 col = vec3(uv, 1.0 - uv.x);
+        if (uv.x < range || uv.x > 1.0 - range ||
+            uv.y < range || uv.y > 1.0 - range)
+            col = vec3(0.0);
+
+        FragColor = vec4(col, 1.0);
     }
     """
 

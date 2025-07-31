@@ -185,7 +185,7 @@ class Render:
 
         # ----- primary window: use center view (normalized 0.5)
         center_view, center_proj = self.camera.compute_view_projection_matrices(
-            0.5, True, self.offset, self.focus
+            0.5, False, self.offset, self.focus
         )
         GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
         fbw, fbh = self.window.framebuffer_size()
