@@ -38,6 +38,7 @@ glfw.swap_interval(0)  # disable vsync exactly once
 
 # Init Bridge
 bridge = BridgeAPI()
+# bridge = BridgeAPI(library_path = r"C:\\Users\\alec\\source\\repos\\LookingGlassBridge\\out\\build\\x64-Release")
 if not bridge.initialize("DisplayRGBD"):
     print("Bridge initialize failed", file=sys.stderr)
     glfw.destroy_window(dummy)
@@ -60,6 +61,7 @@ focus_min = 0.005
 focus_max = -0.007
 normalized_focus = focus_min + ((((focus_input * depthiness_input)) + 1.0) / 2.0) * (focus_max - focus_min)
 
+# Upload ONCE: immutable texture
 tex = GL.glGenTextures(1)
 GL.glBindTexture(GL.GL_TEXTURE_2D, tex)
 GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
