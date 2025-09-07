@@ -16,7 +16,7 @@ from OpenGL import GL
 # Add the parent directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from BridgeApi import BridgeAPI, PixelFormats
+from bridge_python_sdk.BridgeApi import BridgeAPI, PixelFormats
 
 def parse_args():
     parser = argparse.ArgumentParser(

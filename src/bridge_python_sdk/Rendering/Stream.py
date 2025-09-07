@@ -21,7 +21,7 @@ from OpenGL import GL
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, ROOT)
 
-from BridgeApi import BridgeAPI, PixelFormats                                              # noqa: E402
+from bridge_python_sdk.BridgeApi import BridgeAPI, PixelFormats                                              # noqa: E402
 
 
 # ════════════════════════════════════════════════════════════════════

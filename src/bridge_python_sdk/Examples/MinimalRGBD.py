@@ -13,7 +13,7 @@ from OpenGL import GL
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from BridgeApi import BridgeAPI, PixelFormats
+from bridge_python_sdk.BridgeApi import BridgeAPI, PixelFormats
 
 # Download an example RGBD
 with urllib.request.urlopen("https://s3.amazonaws.com/lkg-blocks/u/72d8084888a8489c/rgbd.png") as resp:

@@ -11,7 +11,7 @@ from OpenGL.raw.GL.VERSION.GL_4_3 import GLDEBUGPROC as GLDEBUGPROC_Core
 from OpenGL.raw.GL.ARB.debug_output import glDebugMessageCallbackARB as glDbgCB_ARB
 from OpenGL.raw.GL.ARB.debug_output import GLDEBUGPROCARB as GLDEBUGPROC_ARB
 
-from BridgeApi import BridgeAPI, PixelFormats
+from bridge_python_sdk.BridgeApi import BridgeAPI, PixelFormats
 from .Window import Window
 from .Shader import Shader
 from .Mesh import Mesh

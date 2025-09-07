@@ -14,7 +14,7 @@ from OpenGL import GL
 # This is only needed to make the example work if called from the installed pip package
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from BridgeApi import BridgeAPI, PixelFormats
+from bridge_python_sdk.BridgeApi import BridgeAPI, PixelFormats
 
 # Download an example quilt from blocks
 with urllib.request.urlopen("https://s3.amazonaws.com/lkg-blocks/legacy/781/source.png") as resp:

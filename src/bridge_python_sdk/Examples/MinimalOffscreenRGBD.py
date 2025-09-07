@@ -12,7 +12,7 @@ from OpenGL import GL
 
 # Make BridgeApi importable from sibling directory (adjust as needed)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from BridgeApi import BridgeAPI, PixelFormats
+from bridge_python_sdk.BridgeApi import BridgeAPI, PixelFormats
 
 # ----------------------- helpers: tiny GL program for textured quad -----------------------
 def _compile_shader(src, stype):

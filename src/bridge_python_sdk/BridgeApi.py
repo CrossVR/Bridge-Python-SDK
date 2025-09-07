@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import importlib.resources as ir
 import subprocess
-from BridgeDataTypes import Window, PixelFormats, LKGCalibration, DefaultQuiltSettings
+from bridge_python_sdk.BridgeDataTypes import Window, PixelFormats, LKGCalibration, DefaultQuiltSettings
 
 _MIN_BRIDGE_VERSION = "2.6.0"
 _BRIDGE_VERSION     = "2.6.2"

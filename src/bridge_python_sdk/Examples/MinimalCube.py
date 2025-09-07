@@ -12,7 +12,7 @@ from OpenGL import GL
 import glfw
 from typing import Optional, Dict, Any, List, Tuple
 
-from BridgeApi import BridgeAPI, PixelFormats
+from bridge_python_sdk.BridgeApi import BridgeAPI, PixelFormats
 
 class Mesh:
     # This is storage for the raw mesh data for a cube. 
