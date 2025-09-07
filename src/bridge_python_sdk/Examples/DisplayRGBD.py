@@ -52,6 +52,8 @@ def main() -> None:
     base = os.path.basename(args.rgbd)
     ext = os.path.splitext(base)[1].lower()
     is_video = ext in (".mp4", ".mov", ".avi", ".mkv", ".webm")
+    is_local = True
+    mtime = 0.0
 
     # Load dims (and data for images)
     if is_video:
@@ -77,6 +79,7 @@ def main() -> None:
     else:
         try:
             if args.rgbd.startswith(("http://", "https://")):
+                is_local = False
                 with urllib.request.urlopen(args.rgbd) as resp:
                     buf = resp.read()
                 image = Image.open(io.BytesIO(buf)).convert("RGBA")
@@ -87,6 +90,9 @@ def main() -> None:
             sys.exit(1)
         data = np.array(image, dtype=np.uint8)
         h, w, _ = data.shape
+
+    if is_local:
+        mtime = os.path.getmtime(args.rgbd)
 
     gl_major = 4
     gl_minor = 3
@@ -186,6 +192,26 @@ def main() -> None:
                 GL.GL_UNSIGNED_BYTE,
                 frame,
             )
+        elif is_local and mtime != os.path.getmtime(args.rgbd):
+            try:
+                image = Image.open(args.rgbd).convert("RGBA")
+                data = np.array(image, dtype=np.uint8)
+                h, w, _ = data.shape
+                GL.glBindTexture(GL.GL_TEXTURE_2D, tex)
+                GL.glTexImage2D(
+                    GL.GL_TEXTURE_2D,
+                    0,
+                    GL.GL_RGBA8,
+                    w,
+                    h,
+                    0,
+                    GL.GL_RGBA,
+                    GL.GL_UNSIGNED_BYTE,
+                    data,
+                )
+                mtime = os.path.getmtime(args.rgbd)
+            except Exception as e:
+                print(f"Failed to load RGBD image: {e}", file=sys.stderr)
 
         bridge.draw_interop_rgbd_texture_gl(
             br_wnd,
